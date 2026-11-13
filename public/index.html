@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flood Management Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="grid">
+      <div class="card">
+        <h2>System Telemetry</h2>
+        <p>Water Level: <span class="metric" id="waterLevel">0%</span></p>
+        <p>Motor Status: <span class="metric" id="motorStatus">Stopped</span></p>
+        <button onclick="requestAnalysis()">Generate Gemini Analysis</button>
+        <div id="aiOutput" class="ai-box" style="display: none;"></div>
+      </div>
+
+      <div class="card">
+        <h2>Configuration Parameters</h2>
+        <label for="cityInput">City</label>
+        <input type="text" id="cityInput">
+        
+        <label for="countryInput">Country</label>
+        <input type="text" id="countryInput">
+        
+        <div class="input-group">
+          <div>
+            <label for="startLevel">Start Level (%)</label>
+            <input type="number" id="startLevel">
+          </div>
+          <div>
+            <label for="stopLevel">Stop Level (%)</label>
+            <input type="number" id="stopLevel">
+          </div>
+        </div>
+
+        <label for="modeSelect">Operation Mode</label>
+        <select id="modeSelect">
+          <option value="auto">Automatic</option>
+          <option value="manual">Manual Override</option>
+        </select>
+
+        <label for="manualStateSelect">Manual Motor Control</label>
+        <select id="manualStateSelect">
+          <option value="false">Off</option>
+          <option value="true">On</option>
+        </select>
+
+        <button onclick="updateConfig()">Apply Configuration</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
