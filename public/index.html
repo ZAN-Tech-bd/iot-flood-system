@@ -1,59 +1,331 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flood Management Dashboard</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div class="container">
-    <div class="grid">
-      <div class="card">
-        <h2>System Telemetry</h2>
-        <p>Water Level: <span class="metric" id="waterLevel">0%</span></p>
-        <p>Motor Status: <span class="metric" id="motorStatus">Stopped</span></p>
-        <button onclick="requestAnalysis()">Generate Gemini Analysis</button>
-        <div id="aiOutput" class="ai-box" style="display: none;"></div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="DPI MODEL — FLOOD-PROOF HYDRAULIC FARM &amp; PROJECT SYSTEM A Smart Dynamic-Elevation Business &amp; Farm Solution for Flood-Prone Regions"
+    />
+    <title>FLOOD Lifting House</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <a class="brand" href="#dashboard"
+        ><img
+          class="brand-logo"
+          src="/assets/images/team-logo.png"
+          alt="DPI project team logo"
+          width="170"
+          height="105"
+        /><span class="brand-name">FLOOD Lifting House</span></a
+      >
+      <div class="workspace">DPI MODEL / SMART ELEVATION</div>
+      <nav aria-label="Main navigation">
+        <button class="nav" data-page="history">▤ <span>Sensor history</span></button>
+        <button class="nav active" data-page="dashboard">◫ <span>Overview</span></button
+        ><button class="nav" data-page="settings">⚙ <span>Settings</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <span class="status-dot"></span> Connected living<br /><small
+          >Flood adaptation system · v1.0</small
+        >
       </div>
-
-      <div class="card">
-        <h2>Configuration Parameters</h2>
-        <label for="cityInput">City</label>
-        <input type="text" id="cityInput">
-        
-        <label for="countryInput">Country</label>
-        <input type="text" id="countryInput">
-        
-        <div class="input-group">
+    </aside>
+    <main>
+      <header>
+        <div class="breadcrumb">Workspace <span>/</span> <span id="pageLabel">Overview</span></div>
+        <div id="connection" class="badge">Connecting…</div>
+      </header>
+      <section id="dashboardPage">
+        <div class="page-heading">
           <div>
-            <label for="startLevel">Start Level (%)</label>
-            <input type="number" id="startLevel">
+            <p class="eyebrow">YOUR HOME, IN VIEW</p>
+            <h1>FLOOD Lifting House</h1>
+            <p class="muted project-description">
+              DPI MODEL — FLOOD-PROOF HYDRAULIC FARM &amp; PROJECT SYSTEM<br /><span
+                >A Smart Dynamic-Elevation Business &amp; Farm Solution for Flood-Prone
+                Regions</span
+              >
+            </p>
           </div>
+          <div class="location-chip">⌖ <span id="location">Dhaka, Bangladesh</span></div>
+        </div>
+        <div class="notice" id="sensorNotice" role="status">
+          Waiting for the controller. Measurements will appear when the sensors connect.
+        </div>
+        <div class="metrics">
+          <article class="card metric">
+            <div class="metric-label">House elevation <span>↥</span></div>
+            <div class="value" id="height">— <small>cm</small></div>
+            <p>Above calibrated ground position</p>
+          </article>
+          <article class="card metric">
+            <div class="metric-label">Water level <span>≋</span></div>
+            <div class="value" id="water">— <small>%</small></div>
+            <p id="waterHint">Waiting for water sensor</p>
+            <div class="meter"><i id="waterBar"></i></div>
+          </article>
+          <article class="card metric">
+            <div class="metric-label">Ultrasonic sensor <span>◎</span></div>
+            <div class="value" id="distance">— <small>cm</small></div>
+            <p>Distance from house to ground</p>
+          </article>
+          <article class="card metric">
+            <div class="metric-label">Lift motor <span>⚡</span></div>
+            <div class="value text-value" id="motor">Unknown</div>
+            <p id="modeLabel">Automatic operation</p>
+          </article>
+        </div>
+        <article class="card lift-controls">
           <div>
-            <label for="stopLevel">Stop Level (%)</label>
-            <input type="number" id="stopLevel">
+            <p class="eyebrow">MANUAL LIFT CONTROL</p>
+            <h2>Move your house</h2>
+            <p class="fine" id="liftCommandState" role="status" aria-live="polite">
+              No dashboard override
+            </p>
+          </div>
+          <div class="lift-buttons" role="group" aria-label="Manual lift controls">
+            <button type="button" class="primary" id="liftUp" disabled>↑ Up</button
+            ><button type="button" class="secondary" id="liftDown" disabled>↓ Down</button
+            ><button type="button" class="stop-button" id="liftStop" disabled>■ Stop</button>
+          </div>
+          <p class="fine lift-controls-note">
+            Up and Down run for up to 15 seconds per click. Press Stop before changing direction.
+            Commands take effect on the controller’s next poll.
+          </p>
+          <p
+            class="fine lift-controls-note"
+            id="liftControlMessage"
+            role="status"
+            aria-live="polite"
+          >
+            Fresh controller data is required for movement. Actual motion is reported below.
+          </p>
+        </article>
+        <div class="lift-status" id="liftStatusPanel" role="status" aria-live="polite">
+          <span class="lift-status-icon" aria-hidden="true">↥</span>
+          <div>
+            <strong id="liftStatus">Lift status unavailable</strong>
+            <p id="liftDetail">Waiting for fresh controller data.</p>
+          </div>
+          <span class="lift-arrows" id="liftArrows" aria-hidden="true" hidden>↑ ↑ ↑</span>
+        </div>
+        <div class="overview-grid">
+          <article class="card house-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">LIVE SYSTEM VIEW</p>
+                <h2>Your elevated home</h2>
+              </div>
+              <span class="badge" id="sensorBadge">No sensor data</span>
+            </div>
+            <div
+              class="house-scene"
+              role="img"
+              aria-label="Illustration of house on a lift above water"
+            >
+              <div class="scene-grid"></div>
+              <div class="elevation-label" id="sceneHeight">Waiting for sensor</div>
+              <div class="house" id="house">
+                <div class="roof"></div>
+                <div class="house-body">
+                  <div class="window"></div>
+                  <div class="door"></div>
+                  <div class="window"></div>
+                </div>
+              </div>
+              <div class="support left"></div>
+              <div class="support right"></div>
+              <div class="water-surface" id="sceneWater"></div>
+              <div class="ground"></div>
+              <div class="ground-label">GROUND REFERENCE</div>
+            </div>
+            <div class="scene-footer">
+              <span><i class="legend teal"></i> House lift</span
+              ><span><i class="legend blue"></i> Water level</span
+              ><small>Illustrative view · measurements shown above</small>
+            </div>
+          </article>
+          <article class="card weather-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">LOCAL CONDITIONS</p>
+                <h2>Weather & environment</h2>
+              </div>
+              <button class="icon-button" id="refreshWeather" aria-label="Refresh weather">
+                ↻
+              </button>
+            </div>
+            <div class="weather-main">
+              <span class="weather-icon">☁</span>
+              <div>
+                <div class="temperature" id="temperature">—°</div>
+                <span class="muted" id="weatherDescription">Fetching local weather…</span>
+              </div>
+            </div>
+            <div class="weather-details">
+              <div><span>Precipitation</span><strong id="rain">— mm</strong></div>
+              <div><span>Wind speed</span><strong id="wind">— km/h</strong></div>
+              <div><span>Humidity</span><strong id="humidity">—%</strong></div>
+              <div>
+                <span>River discharge <small>(modeled)</small></span
+                ><strong id="river">— m³/s</strong>
+              </div>
+            </div>
+            <p class="fine" id="weatherTime">Open-Meteo · refreshes every 10 minutes</p>
+            <a class="fine" href="https://open-meteo.com/" target="_blank" rel="noreferrer"
+              >Weather data by Open-Meteo ↗</a
+            >
+          </article>
+        </div>
+        <article class="card intelligence">
+          <div class="ai-mark">✦</div>
+          <div class="ai-content">
+            <p class="eyebrow">GEMINI INTELLIGENCE</p>
+            <h2>A clearer picture of your surroundings</h2>
+            <p class="muted">
+              Combine real sensor readings with local weather for an on-demand assessment.
+            </p>
+            <div id="aiOutput" class="ai-output" role="status" aria-live="polite" hidden></div>
+            <p class="fine" id="analysisTime">Advisory feedback · never controls the house lift</p>
+          </div>
+          <button class="primary" id="analyze">✦ Generate feedback</button>
+        </article>
+        <footer>
+          <span id="lastReading">No sensor readings received</span
+          ><span>FLOOD Lifting House / DPI Model</span>
+        </footer>
+      </section>
+      <section id="historyPage" hidden>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">SAVED MEASUREMENTS</p>
+            <h1>Sensor &amp; weather history</h1>
+            <p class="muted">
+              Every accepted controller reading, paired with the latest weather snapshot available
+              at receipt.
+            </p>
           </div>
         </div>
+        <article class="card history-card">
+          <form id="historyFilters" class="history-filters">
+            <div>
+              <label for="historyFrom">From date &amp; time</label
+              ><input id="historyFrom" type="datetime-local" step="1" />
+            </div>
+            <div>
+              <label for="historyTo">To date &amp; time</label
+              ><input id="historyTo" type="datetime-local" step="1" />
+            </div>
+            <button class="primary" id="historyApply" type="submit">Apply / Refresh</button>
+            <button class="secondary" id="historyToday" type="button">Today</button
+            ><button class="secondary" id="historyAll" type="button">All dates</button>
+          </form>
+          <p class="fine" id="historyZone"></p>
+          <p class="fine">
+            Weather refreshes every 10 minutes. Each row retains the snapshot and its age; missing
+            weather stays unavailable. River discharge is modeled. Historical rows never change when
+            settings change.
+          </p>
+          <p id="historyStatus" role="status" aria-live="polite">
+            Select a date range to view saved readings.
+          </p>
+          <div
+            class="history-table-wrap"
+            tabindex="0"
+            aria-label="Sensor and weather history table"
+          >
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th scope="col">Recorded date &amp; time</th>
+                  <th scope="col">Location</th>
+                  <th scope="col">Water</th>
+                  <th scope="col">House height</th>
+                  <th scope="col">Ultrasonic</th>
+                  <th scope="col">Motor</th>
+                  <th scope="col">Temperature</th>
+                  <th scope="col">Rain</th>
+                  <th scope="col">Wind</th>
+                  <th scope="col">Humidity</th>
+                  <th scope="col">River discharge</th>
+                  <th scope="col">Weather snapshot</th>
+                </tr>
+              </thead>
+              <tbody id="historyRows"></tbody>
+            </table>
+          </div>
+          <div class="history-pagination">
+            <button class="secondary" id="historyNewer" type="button" disabled>← Newer</button
+            ><button class="secondary" id="historyOlder" type="button" disabled>Older →</button>
+          </div>
+        </article>
+      </section>
+      <section id="settingsPage" hidden>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">MAKE IT YOURS</p>
+            <h1>System settings</h1>
+            <p class="muted">Configure your location and Gemini feedback connection.</p>
+          </div>
+        </div>
+        <form id="settingsForm">
+          <div class="settings-grid">
+            <article class="card settings-card">
+              <p class="eyebrow">01 / LOCATION</p>
+              <h2>Local environment</h2>
+              <label for="country">Country / territory</label
+              ><select id="country" required></select
+              ><label for="citySearch">Filter cities or search online</label>
+              <div class="search-row">
+                <input id="citySearch" placeholder="Type to filter city names" /><button
+                  type="button"
+                  class="secondary"
+                  id="searchCities"
+                >
+                  Search online
+                </button>
+              </div>
+              <label for="city">City</label
+              ><select id="city" required></select>
+              <p class="fine" id="cityStatus" role="status">
+                Select a country to browse its cities. Type to filter, or search online for other
+                places.
+              </p>
+            </article>
 
-        <label for="modeSelect">Operation Mode</label>
-        <select id="modeSelect">
-          <option value="auto">Automatic</option>
-          <option value="manual">Manual Override</option>
-        </select>
-
-        <label for="manualStateSelect">Manual Motor Control</label>
-        <select id="manualStateSelect">
-          <option value="false">Off</option>
-          <option value="true">On</option>
-        </select>
-
-        <button onclick="updateConfig()">Apply Configuration</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js"></script>
-</body>
+            <article class="card settings-card">
+              <p class="eyebrow">02 / GEMINI</p>
+              <h2>AI feedback connection</h2>
+              <label for="apiKey">Gemini API key</label
+              ><input
+                id="apiKey"
+                type="password"
+                autocomplete="off"
+                placeholder="Paste your Gemini API key"
+              />
+              <p class="fine" id="keyStatus">No key configured.</p>
+              <p class="fine">
+                A dashboard key stays in server memory until restart. Leave blank to keep the
+                current key. For a permanent key, use GEMINI_API_KEY in your .env file.
+              </p>
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"
+                >Get a Gemini API key ↗</a
+              >
+            </article>
+          </div>
+          <div class="save-row">
+            <p id="saveStatus" role="status" aria-live="polite">
+              Settings apply to this house and all connected dashboards.
+            </p>
+            <button class="primary" id="saveSettings" type="submit">Save configuration</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="/js/app.js"></script>
+  </body>
 </html>
