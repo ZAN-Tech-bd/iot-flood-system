@@ -1,13 +1,45 @@
-# Hardware integration
+﻿# ESP32 hardware and firmware
 
-Controller firmware is not included. The dashboard accepts telemetry from an ESP32 or another HTTP-capable controller.
+The Arduino sketch is [esp32_controller.ino](../firmware/esp32_controller/esp32_controller.ino). GPIO 32 and 33 are unused; movement comes from the dashboard or automatic mode. No direction buttons are required.
 
-See the [setup guide](../README.md#6-connect-ultrasonic-and-water-sensors) for mounting and calibration, and the [API reference](api.md) for telemetry and configuration fields. Send POST /api/esp every 2–5 seconds.
+## Wiring
 
-Implement local travel limits, emergency stop, limit switches, and sensor failure handling before operating a physical lift. The controller must enforce its own motor interlocks. Dashboard feedback never directly controls the motor.
+| Component                                      | GPIO    |
+| ---------------------------------------------- | ------- |
+| SH1106 OLED SDA / SCL                          | 21 / 22 |
+| Water sensor analog output                     | 34      |
+| BTS7960 RPWM / LPWM                            | 25 / 26 |
+| BTS7960 R_EN / L_EN                            | 27 / 14 |
+| HC-SR04 TRIG / ECHO                            | 18 / 19 |
+| Active-high buzzer                             | 23      |
+| Forward (upper) limit / backward (lower) limit | 16 / 4  |
 
-## Direction-aware control
+Connect normally-open limit switches between their GPIO and GND (INPUT_PULLUP, active LOW). Forward blocks Up; backward blocks Down; both pressed block all motion. Assertion is checked immediately without software debounce. Reduce the HC-SR04's 5 V ECHO signal to 3.3 V using a level shifter or divider (for example 1 kOhm from ECHO to GPIO and 2 kOhm from GPIO to GND). Water AO must also stay within 3.3 V. Use separate motor power with common GND. Use a suitable driver for a buzzer that exceeds GPIO current limits.
 
-Read liftCommand and commandExpiresAt from each /api/esp response. Support auto, up, down, and stop; do not treat every running command as Up. Motor drivers must stop before changing direction and enforce physical upper/lower limit switches. Report motorDirection (up/down/stopped) with motorActive in telemetry.
+## Flash and connect
 
-Do not continue indefinitely with a cached command: enforce both the UTC expiry and a local maximum 15-second movement window. A local communication watchdog must stop the motor if polling fails, including network errors or HTTP 503 responses. Dashboard commands take effect only when the controller polls; Stop is not a hardwired emergency stop. Older firmware using manualState alone does not support Down.
+1. Install the Espressif ESP32 **3.x** board package in Arduino IDE. Select **ESP32 Dev Module** for ESP32-WROOM-32 and its USB serial port.
+2. Install **U8g2** and **ArduinoJson 7** from Library Manager. WiFi and HTTPClient come with the ESP32 package; HX711 is not used.
+3. Open `firmware/esp32_controller/esp32_controller.ino`. Edit the adjacent `config.h`: Wi-Fi name/password and `SERVER_URL`. Use the server PC's LAN IPv4 from `ipconfig`, such as `http://192.168.1.25:3000/api/esp`; localhost points to the ESP32 itself. Credentials remain in this file, so do not commit real passwords.
+4. Run `npm install` and `npm start` on the PC. Keep PC and ESP32 on the same trusted LAN with a 2.4 GHz Wi-Fi network for the ESP32. Allow the server port through Windows Firewall on the private network.
+5. Upload the sketch. Open Serial Monitor at **115200**. OLED should show `Server: OK`, and the dashboard should show actual sensor readings.
+6. Calibrate `WATER_RAW_EMPTY` and `WATER_RAW_FULL` using the raw values printed in Serial Monitor, then upload again. Set ground baseline and maximum height in dashboard settings. The ultrasonic sensor must face a fixed ground reference; measured height is `max(0, distanceCm - baselineCm)`.
+7. With motor power disconnected, verify both limit inputs and sensor readings. Then test movement with low load. Up maps to RPWM/forward; Down maps to LPWM/reverse. Confirm actual direction and the matching travel limit before operating the mechanism. Set a lower `MOTOR_RUN_PWM` for initial tests if appropriate.
+
+## Control behavior
+
+The firmware POSTs telemetry approximately every second plus request time. It reports water percentage, distance (null when no echo), actual motor activity and direction. HTTP runs in a separate FreeRTOS task so limit checks and motor control continue during network requests.
+
+Dashboard Up/Down/Stop uses `liftCommand`. Stop takes effect on the next successful poll. The server sends `commandId`, UTC `commandExpiresAt`, and `commandRemainingMs`; firmware subtracts round-trip time from the remaining budget and uses a monotonic clock, so NTP is unnecessary. Repeated polls do not reset a movement window.
+
+Automatic mode raises at or above startLevel, lowers at or below stopLevel, and retains its target between thresholds. At boot its initial target is lowered unless water is at/above startLevel. Upper/lower switches stop travel in their respective directions. Unknown ultrasonic distance stops either direction; maximum calibrated height blocks Up while permitting Down.
+
+Every movement target has a local 15-second window, including pauses. Timeout latches motion off until a new dashboard command, explicit Stop, or changed automatic target. If full travel takes longer, issue another dashboard request after inspecting the mechanism. A network/HTTP/JSON error stops on receipt; absence of a valid response for 3.5 seconds or Wi-Fi loss also stops. Boot and PWM initialization failure leave driver enables LOW.
+
+This prototype expects one controller on a trusted LAN; it has no device authentication. Physical limit switches, motor power cutoff and emergency stop remain necessary: the dashboard Stop requires networking, and electrical stopping does not remove mechanical momentum. Normally-open switches cannot detect a broken wire; use an independent hardware cutoff for the mechanism.
+
+Firmware API references: [Espressif LEDC](https://docs.espressif.com/projects/arduino-esp32/en/latest/api/ledc.html) and [ArduinoJson 7 parsing](https://arduinojson.org/v7/api/json/deserializejson/).
+
+### Run the ESP32 API demo
+
+Run `npm run demo:esp` (PowerShell: `npm.cmd run demo:esp`). It starts an isolated temporary server and simulates ESP32 telemetry plus dashboard commands. It verifies live dashboard broadcasts, Up/Down/Stop, command expiry, invalid payloads, storage failure handling, and history after restart. It takes about 16 seconds, uses simulated weather, and removes its temporary data afterward. It never sends movement commands to your normal server or hardware. Passing this demo verifies the software protocol; physical board connectivity and motor interlocks must still be tested on the ESP32.

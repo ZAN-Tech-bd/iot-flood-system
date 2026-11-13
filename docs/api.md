@@ -55,3 +55,9 @@ Browser → server: liftCommand with { action: 'up' | 'down' | 'stop' }, acknowl
 POST /api/esp responses now include liftCommand (auto/up/down/stop) and commandExpiresAt (UTC timestamp or null). During a dashboard override mode=manual. The legacy manualState boolean is true only for Up; it is false for Down and Stop. Direction-aware firmware must use liftCommand, enforce the deadline and its own local watchdog, and implement motor reversal interlocks.
 
 Telemetry optionally includes motorDirection: up/down when motorActive=true, stopped when motorActive=false, or null/omitted when unknown. Invalid or inconsistent directions return 400. Reported motor direction is independent of the requested command and is included in persisted sensor snapshots. Without direction telemetry, the UI displays a running motor without claiming upward or downward movement.
+
+### ESP32 command timing
+
+Responses also include commandId (the dashboard request timestamp, or null) and commandRemainingMs (remaining UTC deadline budget in milliseconds, or null without an expiring override). The ESP32 subtracts the request round-trip duration and enforces the remainder with millis(), avoiding clock synchronization. A null budget still requires the local 15-second movement window and communication watchdog. Repeated polls of a command must not reset that window. Responses are marked Cache-Control: no-store. See [firmware setup and behavior](hardware.md).
+
+Telemetry may include boolean `upperLimit` and `lowerLimit` fields (null/omitted means unknown). The ESP32 reports its active-low GPIO 16 and GPIO 4 switches. A reported limit cancels a matching manual command to Stop; firmware stops locally first. The dashboard displays “Upper limit reached · lifting stopped” or “Lower limit reached · lifting stopped” after stopped feedback, disables movement toward that switch, and allows movement away from it. Reflash the ESP32 to enable limit reporting.

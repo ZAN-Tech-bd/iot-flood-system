@@ -43,6 +43,10 @@ export function validateConfig(input) {
 export function validateTelemetry(input) {
   if (!input || typeof input !== 'object') throw new Error('Invalid telemetry.');
   const { level, distanceCm, motorActive, motorDirection } = input;
+  for (const key of ['upperLimit', 'lowerLimit']) {
+    if (input[key] != null && typeof input[key] !== 'boolean')
+      throw new Error(`${key} must be a boolean.`);
+  }
   if (
     motorDirection != null &&
     (!['up', 'down', 'stopped'].includes(motorDirection) ||
@@ -65,6 +69,8 @@ export function validateTelemetry(input) {
     distanceCm: distanceCm ?? null,
     motorActive,
     motorDirection: motorDirection ?? null,
+    upperLimit: input.upperLimit ?? null,
+    lowerLimit: input.lowerLimit ?? null,
     updatedAt: new Date().toISOString(),
   };
 }

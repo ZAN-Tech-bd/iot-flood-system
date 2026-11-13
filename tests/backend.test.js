@@ -234,5 +234,25 @@ test(
       assert.equal(command.manualState, action === 'up');
       assert.equal((await socket.next('dashboardUpdate')).motorActive, false);
     }
+    for (const [action, limit] of [
+      ['up', 'upperLimit'],
+      ['down', 'lowerLimit'],
+    ]) {
+      socket.ws.send('422' + JSON.stringify(['liftCommand', { action }]));
+      assert.equal((await socket.next('ack')).ok, true);
+      const response = await post({
+        level: 42,
+        distanceCm: 95.5,
+        motorActive: false,
+        motorDirection: 'stopped',
+        upperLimit: false,
+        lowerLimit: false,
+        [limit]: true,
+      });
+      assert.equal((await response.json()).liftCommand, 'stop');
+      assert.equal(application.telemetry.snapshot()[limit], true);
+      assert.equal(application.lift.current().action, 'stop');
+    }
+    assert.equal((await post({ level: 42, motorActive: false, upperLimit: 'yes' })).status, 400);
   },
 );

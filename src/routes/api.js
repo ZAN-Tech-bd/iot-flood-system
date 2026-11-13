@@ -35,6 +35,7 @@ export function createApiRouter({ config, telemetry, weather, history, lift, io,
     }
   });
   router.post('/esp', (req, res) => {
+    res.set('Cache-Control', 'no-store');
     let snapshot;
     try {
       snapshot = telemetry.preview(req.body);
@@ -49,6 +50,12 @@ export function createApiRouter({ config, telemetry, weather, history, lift, io,
         .json({ error: 'Could not save sensor log. Check server storage and retry.' });
     }
     telemetry.commit(snapshot);
+    const action = lift.current().action;
+    if (
+      (action === 'up' && snapshot.upperLimit === true) ||
+      (action === 'down' && snapshot.lowerLimit === true)
+    )
+      lift.request('stop');
     io.emit('dashboardUpdate', snapshot);
     const { mode, manualState, startLevel, stopLevel, maxHeightCm, baselineCm } = config.get();
     res.json(

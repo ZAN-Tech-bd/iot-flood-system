@@ -217,6 +217,25 @@ test('frontend modules initialize and preserve location, telemetry, settings, an
   });
   assert.equal($('liftStatus').textContent, 'House is lowering');
   assert.equal($('liftArrows').textContent, '↓ ↓ ↓');
+  for (const [limit, message, blocked, allowed] of [
+    ['upperLimit', 'Upper limit reached · lifting stopped', 'liftUp', 'liftDown'],
+    ['lowerLimit', 'Lower limit reached · lifting stopped', 'liftDown', 'liftUp'],
+  ]) {
+    deliver('dashboardUpdate', {
+      sensorLevel: 42,
+      distanceCm: 95.5,
+      houseHeightCm: 75.5,
+      motorActive: false,
+      motorDirection: 'stopped',
+      upperLimit: false,
+      lowerLimit: false,
+      [limit]: true,
+      updatedAt: new Date().toISOString(),
+    });
+    assert.equal($('liftCommandState').textContent, message);
+    assert.equal($(blocked).disabled, true);
+    assert.equal($(allowed).disabled, false);
+  }
   socket.connected = false;
   deliver('disconnect');
   assert.equal($('liftStatus').textContent, 'Lift status unavailable');

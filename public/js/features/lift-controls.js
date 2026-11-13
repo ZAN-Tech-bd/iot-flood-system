@@ -19,8 +19,8 @@ export function initLiftControls(socket) {
       socket.connected &&
       telemetry?.updatedAt &&
       Date.now() - Date.parse(telemetry.updatedAt) < 30000;
-    $('liftUp').disabled = !fresh || pending;
-    $('liftDown').disabled = !fresh || pending;
+    $('liftUp').disabled = !fresh || pending || telemetry?.upperLimit === true;
+    $('liftDown').disabled = !fresh || pending || telemetry?.lowerLimit === true;
     // Stop stays available while a movement request is pending or sensor data is stale.
     $('liftStop').disabled = !socket.connected;
     for (const action of ['up', 'down', 'stop'])
@@ -31,17 +31,36 @@ export function initLiftControls(socket) {
     const seconds = command?.expiresAt
       ? Math.max(0, Math.ceil((Date.parse(command.expiresAt) - Date.now()) / 1000))
       : 0;
+    const stopped = fresh && telemetry.motorActive === false;
+    const limitMessage =
+      fresh && telemetry.upperLimit && telemetry.lowerLimit
+        ? 'Both travel limits active'
+        : fresh && telemetry.upperLimit
+          ? 'Upper limit reached'
+          : fresh && telemetry.lowerLimit
+            ? 'Lower limit reached'
+            : null;
     setText(
       'liftCommandState',
       !socket.connected
         ? 'Server offline · commands unavailable'
-        : !command?.action
-          ? 'No dashboard override'
-          : command.action === 'stop'
-            ? 'Requested: Stop · awaiting controller feedback'
-            : seconds === 0
-              ? 'Movement window ended · waiting for server stop'
-              : `Requested: ${command.action === 'up' ? 'Up' : 'Down'} · ${seconds}s remaining`,
+        : limitMessage && stopped
+          ? `${limitMessage} · lifting stopped`
+          : !fresh
+            ? 'Waiting for fresh controller data'
+            : telemetry.motorActive && telemetry.motorDirection === 'up'
+              ? 'Lifting up · will stop at the upper limit or safety timeout'
+              : telemetry.motorActive && telemetry.motorDirection === 'down'
+                ? 'Moving down · will stop at the lower limit or safety timeout'
+                : !command?.action
+                  ? 'No dashboard override'
+                  : command.action === 'stop'
+                    ? stopped && Date.parse(telemetry.updatedAt) >= Date.parse(command.requestedAt)
+                      ? 'Lifting stopped'
+                      : 'Requested: Stop · awaiting controller feedback'
+                    : seconds === 0
+                      ? 'Movement window ended · waiting for server stop'
+                      : `Requested: ${command.action === 'up' ? 'Up' : 'Down'} · ${seconds}s remaining`,
     );
   }
   socket.on('dashboardUpdate', (data) => {
@@ -83,7 +102,9 @@ export function initLiftControls(socket) {
           error
             ? 'Command not confirmed. Check the connection; use Stop to request a halt.'
             : result?.error ||
-                'Command accepted by server. The controller applies it on its next poll.',
+                (action === 'stop'
+                  ? 'Stop requested. Waiting for the controller to confirm.'
+                  : `${action === 'up' ? 'Up' : 'Down'} requested. Movement stops at the ${action === 'up' ? 'upper' : 'lower'} limit or after 15 seconds.`),
         );
         render();
       });

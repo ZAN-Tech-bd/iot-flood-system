@@ -65,8 +65,6 @@ export function initTelemetry(socket) {
           ? 'Sensor data is stale. Values below are the last received measurements.'
           : 'Waiting for the controller. Measurements will appear when the sensors connect.',
     );
-    if (!fresh) setText('motor', 'Unknown');
-    else setText('motor', telemetry.motorActive ? 'Running' : 'Stopped');
   }
   socket.on('dashboardUpdate', (data) => {
     telemetry = data;

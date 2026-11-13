@@ -38,6 +38,8 @@ export function createLiftControl({ isFresh, onChange, now = Date.now }) {
         liftCommand:
           action ?? (config.mode === 'manual' ? (config.manualState ? 'up' : 'stop') : 'auto'),
         commandExpiresAt: expiresAt,
+        commandId: command.requestedAt,
+        commandRemainingMs: expiresAt ? Math.max(0, Date.parse(expiresAt) - now()) : null,
       };
     },
   };

@@ -104,7 +104,7 @@ Settings contains location and Gemini connection only. Internal lift thresholds,
 
 ### Step 7 — Connect the ESP32/controller to the new PC
 
-Controller firmware is **not included**. Implement the contract below in your hardware controller; see [hardware notes](docs/hardware.md) and the [API reference](docs/api.md).
+ESP32-WROOM-32 firmware is included in `firmware/esp32_controller/`. Follow the [wiring, flashing and calibration guide](docs/hardware.md), then use the [API reference](docs/api.md) for protocol details.
 
 1. Connect the PC and controller to the same trusted local network.
 2. On Windows, run `ipconfig` and find the active Wi-Fi/Ethernet adapter's IPv4 address, for example `192.168.1.25`.
@@ -148,14 +148,14 @@ Open **Sensor history**, click **Today** or **All dates**, and confirm that a ro
 
 ### Control a real controller
 
-The dashboard uses actual controller feedback for house height and animation. Up, Down and Stop are connected to the server command system. Arduino firmware is not included yet; when supplied, it must be integrated with the direction-aware command and telemetry fields described below. Until the controller connects, Up and Down stay disabled and measurements remain unavailable.
+The dashboard uses actual controller feedback for house height and animation. Up, Down and Stop are connected to the server command system. The included [ESP32 firmware](docs/hardware.md) implements the direction-aware command and telemetry fields described below without physical direction buttons. Until the controller connects, Up and Down stay disabled and measurements remain unavailable.
 
 Overview has **Up**, **Down**, and **Stop** buttons. Up and Down require controller readings younger than 30 seconds. Stop can be sent even when readings are stale, provided the dashboard is connected to the server. Acknowledgement means the server accepted the request; actual motion is reported separately by the controller.
 
 - Up/Down override automatic operation for at most **15 seconds per click**, then the server requests Stop. Click again for another movement window.
 - Press Stop before reversing direction. Stop latches the dashboard override in manual mode.
 - Dashboard commands live in server memory. Restart clears them and returns to the saved configuration. Saving location or Gemini settings does not clear an active command.
-- The controller receives liftCommand (up/down/stop/auto) and commandExpiresAt in its next POST /api/esp response. It must implement both directions; firmware is not included.
+- The controller receives liftCommand (up/down/stop/auto) and commandExpiresAt in its next POST /api/esp response. The included firmware implements both directions and local travel limits.
 - Report optional motorDirection: up or down while motorActive is true, and stopped while false. Without direction feedback the UI says “Lift motor running” rather than assuming direction.
 
 Older controllers that only read manualState can still lift with Up and halt with Stop, but **cannot lower using Down**. Down deliberately sends manualState=false so an older lift-only controller cannot raise the house accidentally. Updated firmware must use liftCommand for direction, stop locally when commandExpiresAt is reached, enforce a local maximum 15-second movement window, and stop if server polling fails. This browser control is not a substitute for a hardware emergency stop, travel switches, or reversing interlocks.
