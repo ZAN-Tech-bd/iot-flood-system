@@ -13,8 +13,9 @@ The [sketch](../firmware/esp32_controller/esp32_controller.ino) follows the supp
 | Forward (Up) / Reverse (Down) button    | 32 / 33 |
 | Forward (upper) / Reverse (lower) limit | 16 / 4  |
 | Optional HC-SR04 TRIG / ECHO            | 18 / 19 |
+| Active-high buzzer                      | 17      |
 
-Buttons and limit switches connect to GND and use INPUT_PULLUP (active LOW). Forward maps to Up; reverse maps to Down. Keep sensor inputs within 3.3 V, including a divider or level shifter for HC-SR04 ECHO. Use a common ground with the motor supply. The buzzer from the previous sketch is unused.
+Buttons and limit switches connect to GND and use INPUT_PULLUP (active LOW). Forward maps to Up; reverse maps to Down. Keep sensor inputs within 3.3 V, including a divider or level shifter for HC-SR04 ECHO. Use a common ground with the motor supply. GPIO17 drives an active-high buzzer intermittently while a motor direction is commanded.
 
 ## Upload and connect
 
@@ -22,7 +23,7 @@ Buttons and limit switches connect to GND and use INPUT_PULLUP (active LOW). For
 2. Install U8g2 and ArduinoJson 7. WiFi, WebServer and HTTPClient come with the ESP32 package.
 3. Edit config.h for the router credentials and the server PC's LAN address in SERVER_URL. Existing credentials are retained.
 4. Upload, then open Serial Monitor at 115200.
-5. Connect to the WaterMotor-ESP32 access point using Water1234, or your configured local credentials. Open the dashboard IP printed by Serial Monitor.
+5. Connect to the WaterMotor-ESP32 access point using the password configured in `config.h`. Open the dashboard IP printed by Serial Monitor.
 6. The ESP32 also joins the configured router and uploads readings to the main dashboard. Both dashboards animate reported forward/reverse movement. The main dashboard needs the server and ESP32 to be reachable over that LAN.
 
 ## Control behavior
@@ -36,6 +37,8 @@ Buttons and limit switches connect to GND and use INPUT_PULLUP (active LOW). For
 - Ultrasonic distance is monitoring only. Missing echo and displayed height do not inhibit movement. The old maximum-height settings, click-to-toggle buttons and reversal delay are not part of this supplied control logic.
 
 The loop handles local requests, water/buttons/limits, motor output, distance, OLED and serial output, then delays 100 ms. Distance measurement has a 25 ms timeout. A separate task uploads copied snapshots about every second plus HTTP request time; server replies do not command the motor. Network failure does not change local control. No offline upload backlog is stored.
+
+The OLED shows the raw water ADC, calibrated percentage, ultrasonic distance, calculated height, commanded motor direction and limit inputs. `OLED_BASELINE_CM` in `config.h` must match the server's saved baseline for the displayed heights to agree. The full-scale water ADC value is an assumed calibration until measured; the wet/dry thresholds independently control motion.
 
 Before moving a load, check the GPIO32 button wiring, both direction limits and actual motor direction. STOP is a software command; an independent physical power cutoff is still needed for a hardware emergency stop.
 
