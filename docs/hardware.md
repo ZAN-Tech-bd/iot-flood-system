@@ -1,6 +1,6 @@
 ﻿# ESP32 hardware and firmware
 
-The Arduino sketch is [esp32_controller.ino](../firmware/esp32_controller/esp32_controller.ino). GPIO 32 and 33 are unused; movement comes from the dashboard or automatic mode. No direction buttons are required.
+The Arduino sketch is [esp32_controller.ino](../firmware/esp32_controller/esp32_controller.ino). Movement comes from the dashboard, automatic mode, or physical Up/Down buttons.
 
 ## Wiring
 
@@ -12,11 +12,17 @@ The Arduino sketch is [esp32_controller.ino](../firmware/esp32_controller/esp32_
 | BTS7960 R_EN / L_EN                            | 27 / 14 |
 | HC-SR04 TRIG / ECHO                            | 18 / 19 |
 | Active-high buzzer                             | 23      |
+| Up pushbutton                                  | 15      |
+| Down pushbutton                                | 33      |
 | Forward (upper) limit / backward (lower) limit | 16 / 4  |
 
 Connect normally-open limit switches between their GPIO and GND (INPUT_PULLUP, active LOW). Forward blocks Up; backward blocks Down; both pressed block all motion. Assertion is checked immediately without software debounce. Reduce the HC-SR04's 5 V ECHO signal to 3.3 V using a level shifter or divider (for example 1 kOhm from ECHO to GPIO and 2 kOhm from GPIO to GND). Water AO must also stay within 3.3 V. Use separate motor power with common GND. Use a suitable driver for a buzzer that exceeds GPIO current limits.
 
 ## Flash and connect
+
+Wire each direction button between its GPIO and GND (`INPUT_PULLUP`, active LOW). **GPIO20 is unavailable on ESP32-WROOM-32**, so Down uses **GPIO33** instead. Use GPIO labels rather than the physical pin position. GPIO15 is a strapping pin: release Up during reset/power-up. See [Espressif's GPIO table](https://docs.espressif.com/projects/esp-idf/en/release-v4.4/esp32/api-reference/peripherals/gpio.html).
+
+Physical buttons are debounced for 25 ms and require release after boot before accepting a press. Click Up/Down to start, click the same direction again to stop; holding a button does not repeat clicks. Pressing both stops immediately and requires releasing both before another command. Direction changes retain the 150 ms motor dead time. A physical override remains until another button action or a new dashboard command; a physical Stop returns to server/automatic control when the wet/dry sensor state changes. Server connectivity, valid distance readings, maximum height and travel limits still apply. Physical buttons do not bypass the communication watchdog or provide offline movement.
 
 1. Install the Espressif ESP32 **3.x** board package in Arduino IDE. Select **ESP32 Dev Module** for ESP32-WROOM-32 and its USB serial port.
 2. Install **U8g2** and **ArduinoJson 7** from Library Manager. WiFi and HTTPClient come with the ESP32 package; HX711 is not used.
@@ -30,11 +36,11 @@ Connect normally-open limit switches between their GPIO and GND (INPUT_PULLUP, a
 
 The firmware POSTs telemetry approximately every second plus request time. It reports water percentage, distance (null when no echo), actual motor activity and direction. HTTP runs in a separate FreeRTOS task so limit checks and motor control continue during network requests.
 
-Dashboard Up/Down/Stop uses `liftCommand`. Stop takes effect on the next successful poll. The server sends `commandId`, UTC `commandExpiresAt`, and `commandRemainingMs`; firmware subtracts round-trip time from the remaining budget and uses a monotonic clock, so NTP is unnecessary. Repeated polls do not reset a movement window.
+Dashboard Up/Down/Stop uses `liftCommand`. Movement has no duration limit. Click the active direction again or Stop to halt. Stop takes effect on the next successful poll. `commandExpiresAt` and `commandRemainingMs` are null.
 
-Automatic mode raises at or above startLevel, lowers at or below stopLevel, and retains its target between thresholds. At boot its initial target is lowered unless water is at/above startLevel. Upper/lower switches stop travel in their respective directions. Unknown ultrasonic distance stops either direction; maximum calibrated height blocks Up while permitting Down.
+Automatic mode raises when calibrated water percentage is greater than 0 and lowers at 0. Dry readings snap to zero instead of retaining a filtering residue. startLevel/stopLevel are retained for configuration compatibility but no longer select movement. A manual Stop holds until the wet/dry state changes; repeated readings do not restart it. A zero reading after a wet Stop returns to automatic lowering. Upper/lower switches stop travel in their respective directions. Unknown ultrasonic distance stops either direction; maximum calibrated height blocks Up while permitting Down.
 
-Every movement target has a local 15-second window, including pauses. Timeout latches motion off until a new dashboard command, explicit Stop, or changed automatic target. If full travel takes longer, issue another dashboard request after inspecting the mechanism. A network/HTTP/JSON error stops on receipt; absence of a valid response for 3.5 seconds or Wi-Fi loss also stops. Boot and PWM initialization failure leave driver enables LOW.
+There is no local 15-second movement timer. Travel limits stop the motor locally; a matching manual command becomes Stop at the server. A network/HTTP/JSON error stops on receipt; absence of a valid response for 3.5 seconds or Wi-Fi loss also stops. Boot and PWM initialization failure leave driver enables LOW.
 
 This prototype expects one controller on a trusted LAN; it has no device authentication. Physical limit switches, motor power cutoff and emergency stop remain necessary: the dashboard Stop requires networking, and electrical stopping does not remove mechanical momentum. Normally-open switches cannot detect a broken wire; use an independent hardware cutoff for the mechanism.
 
@@ -42,4 +48,4 @@ Firmware API references: [Espressif LEDC](https://docs.espressif.com/projects/ar
 
 ### Run the ESP32 API demo
 
-Run `npm run demo:esp` (PowerShell: `npm.cmd run demo:esp`). It starts an isolated temporary server and simulates ESP32 telemetry plus dashboard commands. It verifies live dashboard broadcasts, Up/Down/Stop, command expiry, invalid payloads, storage failure handling, and history after restart. It takes about 16 seconds, uses simulated weather, and removes its temporary data afterward. It never sends movement commands to your normal server or hardware. Passing this demo verifies the software protocol; physical board connectivity and motor interlocks must still be tested on the ESP32.
+Run `npm run demo:esp` (PowerShell: `npm.cmd run demo:esp`). It starts an isolated temporary server and simulates ESP32 telemetry plus dashboard commands. It verifies live dashboard broadcasts, Up/Down/Stop, toggle-to-stop, invalid payloads, storage failure handling, and history after restart. It runs in a few seconds, uses simulated weather, and removes its temporary data afterward. It never sends movement commands to your normal server or hardware. Passing this demo verifies the software protocol; physical board connectivity and motor interlocks must still be tested on the ESP32.

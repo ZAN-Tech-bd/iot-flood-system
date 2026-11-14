@@ -148,17 +148,17 @@ Open **Sensor history**, click **Today** or **All dates**, and confirm that a ro
 
 ### Control a real controller
 
-The dashboard uses actual controller feedback for house height and animation. Up, Down and Stop are connected to the server command system. The included [ESP32 firmware](docs/hardware.md) implements the direction-aware command and telemetry fields described below without physical direction buttons. Until the controller connects, Up and Down stay disabled and measurements remain unavailable.
+The dashboard uses actual controller feedback for house height and animation. Up, Down and Stop are connected to the server command system. The included [ESP32 firmware](docs/hardware.md) also supports physical Up (GPIO15) and Down (GPIO33) buttons connected to GND. GPIO20 is unavailable on ESP32-WROOM-32. Until the controller connects, Up and Down stay disabled and measurements remain unavailable.
 
 Overview has **Up**, **Down**, and **Stop** buttons. Up and Down require controller readings younger than 30 seconds. Stop can be sent even when readings are stale, provided the dashboard is connected to the server. Acknowledgement means the server accepted the request; actual motion is reported separately by the controller.
 
-- Up/Down override automatic operation for at most **15 seconds per click**, then the server requests Stop. Click again for another movement window.
-- Press Stop before reversing direction. Stop latches the dashboard override in manual mode.
+- Up/Down have no movement duration limit. Click the active direction again or Stop to halt. Limits and the communication watchdog remain active. In automatic mode any water above 0% requests Up and 0% requests Down.
+- Press Stop before reversing direction. Stop holds until the wet/dry sensor state changes, then automatic mode resumes.
 - Dashboard commands live in server memory. Restart clears them and returns to the saved configuration. Saving location or Gemini settings does not clear an active command.
 - The controller receives liftCommand (up/down/stop/auto) and commandExpiresAt in its next POST /api/esp response. The included firmware implements both directions and local travel limits.
 - Report optional motorDirection: up or down while motorActive is true, and stopped while false. Without direction feedback the UI says “Lift motor running” rather than assuming direction.
 
-Older controllers that only read manualState can still lift with Up and halt with Stop, but **cannot lower using Down**. Down deliberately sends manualState=false so an older lift-only controller cannot raise the house accidentally. Updated firmware must use liftCommand for direction, stop locally when commandExpiresAt is reached, enforce a local maximum 15-second movement window, and stop if server polling fails. This browser control is not a substitute for a hardware emergency stop, travel switches, or reversing interlocks.
+Older controllers that only read manualState can still lift with Up and halt with Stop, but **cannot lower using Down**. Down deliberately sends manualState=false so an older lift-only controller cannot raise the house accidentally. Updated firmware must use liftCommand for direction, enforce local travel limits and stop if server polling fails. Movement has no duration timeout. This browser control is not a substitute for a hardware emergency stop, travel switches, or reversing interlocks.
 
 ## Sensor and weather history
 

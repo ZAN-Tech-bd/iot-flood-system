@@ -88,11 +88,11 @@ try {
   const up = await reading(85, 35, 'up');
   assert.equal(up.liftCommand, 'up');
   assert.equal(up.commandId, accepted.command.requestedAt);
-  assert.ok(up.commandRemainingMs > 0 && up.commandRemainingMs <= 15000);
+  assert.equal(up.commandRemainingMs, null);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const repeated = await reading(90, 45, 'up');
   assert.equal(repeated.commandId, up.commandId);
-  assert.ok(repeated.commandRemainingMs < up.commandRemainingMs);
+  assert.equal(repeated.commandRemainingMs, null);
   assert.match((await request('down')).error, /Stop/);
   assert.equal((await request('stop')).ok, true);
   assert.equal((await reading(90, 45, 'stopped')).liftCommand, 'stop');
@@ -101,7 +101,7 @@ try {
   assert.equal((await request('stop')).ok, true);
   assert.equal((await reading(10, null, 'stopped')).liftCommand, 'stop');
   console.log(
-    'PASS: Up/Stop/Down/Stop, reversal interlock, decreasing expiry, and missing ultrasonic echo',
+    'PASS: Up/Stop/Down/Stop, reversal interlock, commands without a time limit, and missing ultrasonic echo',
   );
   for (const bad of [
     { level: 101, motorActive: false },
@@ -121,10 +121,11 @@ try {
   application.history.record = record;
   assert.equal(application.telemetry.snapshot().sensorLevel, 10);
   console.log('PASS: storage failure returns 503 without accepting or broadcasting telemetry');
-  console.log('Checking real 15-second command expiration...');
+  console.log('Checking click-again Stop and automatic resume at zero water...');
   assert.equal((await request('up')).ok, true);
-  await new Promise((resolve) => setTimeout(resolve, 15100));
+  assert.equal((await request('up')).command.action, 'stop');
   assert.equal((await reading(10, 20, 'stopped')).liftCommand, 'stop');
+  assert.equal((await reading(0, 20, 'stopped')).liftCommand, 'auto');
   socket.close();
   socket = null;
   await application.close();
@@ -136,10 +137,10 @@ try {
       throw new Error('Simulated weather outage');
     },
   });
-  assert.equal(application.history.list().items.length, 7);
+  assert.equal(application.history.list().items.length, 8);
   assert.equal(application.lift.current().action, null);
   console.log(
-    'PASS: expiration returns Stop; history survives server restart; transient commands clear',
+    'PASS: click-again stops and zero water resumes auto; history survives server restart; transient commands clear',
   );
   console.log(
     'DEMO PASSED. This verifies the server protocol, not physical ESP32 Wi-Fi, firmware execution, or motor wiring.',

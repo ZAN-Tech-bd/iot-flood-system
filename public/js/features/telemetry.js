@@ -87,9 +87,9 @@ export function initTelemetry(socket) {
       'waterHint',
       data.sensorLevel === null
         ? 'Waiting for water sensor'
-        : data.sensorLevel >= config?.startLevel
-          ? 'Above configured lift threshold'
-          : 'Below configured lift threshold',
+        : data.sensorLevel > 0
+          ? 'Water detected · automatic target: Up'
+          : 'No water detected · automatic target: Down',
     );
     $('waterBar').style.width = `${data.sensorLevel ?? 0}%`;
     $('sceneWater').style.height = `${15 + (data.sensorLevel ?? 0) * 0.65}px`;

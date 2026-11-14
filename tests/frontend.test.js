@@ -201,7 +201,7 @@ test('frontend modules initialize and preserve location, telemetry, settings, an
   assert.equal($('liftArrows').hidden, false);
   assert.equal($('liftUp').disabled, false);
   $('liftUp').dispatch('click');
-  assert.equal(emitted.find(([name]) => name === 'liftCommand')[1].action, 'up');
+  assert.equal(emitted.find(([name]) => name === 'liftCommand')[1].action, 'stop');
   deliver('liftCommandUpdate', {
     action: 'down',
     expiresAt: new Date(Date.now() + 15000).toISOString(),

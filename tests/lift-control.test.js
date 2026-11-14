@@ -1,45 +1,49 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLiftControl, MOVE_DURATION_MS } from '../src/services/lift-control.js';
+import { createLiftControl } from '../src/services/lift-control.js';
 import { DEFAULT_CONFIG } from '../src/config/defaults.js';
 import { validateTelemetry } from '../src/domain/validation.js';
 
-test('manual Up/Down/Stop override polling without making legacy controllers raise on Down', () => {
+test('manual movement has no deadline; repeated direction toggles Stop and reversing requires Stop', () => {
   let fresh = true,
-    clock = Date.parse('2026-11-14T12:00:00Z');
-  const updates = [];
-  const lift = createLiftControl({
-    isFresh: () => fresh,
-    now: () => clock,
-    onChange: (command) => updates.push(command),
-  });
+    clock = Date.now();
+  const lift = createLiftControl({ isFresh: () => fresh, onChange: () => {}, now: () => clock });
   assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'auto');
   const up = lift.request('up');
-  assert.equal(Date.parse(up.expiresAt) - clock, MOVE_DURATION_MS);
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).manualState, true);
+  assert.equal(up.expiresAt, null);
+  clock += 3600000;
+  assert.equal(lift.current().action, 'up');
+  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).commandRemainingMs, null);
   assert.throws(() => lift.request('down'), /Stop/);
-  lift.request('stop');
-  const down = lift.request('down');
-  assert.equal(down.action, 'down');
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'down');
+  assert.equal(lift.request('up').action, 'stop');
+  assert.equal(lift.request('down').action, 'down');
   assert.equal(lift.controllerConfig(DEFAULT_CONFIG).manualState, false);
+  assert.equal(lift.request('down').action, 'stop');
   fresh = false;
   assert.throws(() => lift.request('up'), /fresh/);
   assert.equal(lift.request('stop').action, 'stop');
   assert.throws(() => lift.request('sideways'), /Choose/);
-  assert.equal(lift.current().action, 'stop');
 });
-test('movement expires to a latched Stop and a fresh server does not replay browser commands', () => {
-  let clock = Date.now();
-  const lift = createLiftControl({ isFresh: () => true, onChange: () => {}, now: () => clock });
-  lift.request('up');
-  clock += MOVE_DURATION_MS;
+
+test('Stop holds through polls and resumes automatic mode only on a wet/dry transition', () => {
+  const lift = createLiftControl({ isFresh: () => true, onChange: () => {} });
+  lift.observeLevel(5);
+  lift.request('stop');
+  lift.observeLevel(20);
+  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'stop');
+  lift.observeLevel(0);
+  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'auto');
+  lift.request('stop');
+  lift.observeLevel(0);
   assert.equal(lift.current().action, 'stop');
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).mode, 'manual');
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).manualState, false);
-  const restarted = createLiftControl({ isFresh: () => true, onChange: () => {} });
-  assert.equal(restarted.current().action, null);
+  lift.observeLevel(0.1);
+  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'auto');
+  assert.equal(
+    createLiftControl({ isFresh: () => true, onChange: () => {} }).current().action,
+    null,
+  );
 });
+
 test('actual motor direction is validated independently of the requested command', () => {
   assert.equal(
     validateTelemetry({ level: 40, motorActive: true, motorDirection: 'down' }).motorDirection,
@@ -52,21 +56,4 @@ test('actual motor direction is validated independently of the requested command
     { level: 40, motorActive: true, motorDirection: 'invalid' },
   ])
     assert.throws(() => validateTelemetry(input));
-});
-
-test('controller timing budget decreases across polls without renewing a request', () => {
-  let clock = Date.parse('2026-11-14T12:00:00Z');
-  const lift = createLiftControl({ isFresh: () => true, onChange: () => {}, now: () => clock });
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).commandRemainingMs, null);
-  const request = lift.request('up');
-  const first = lift.controllerConfig(DEFAULT_CONFIG);
-  assert.equal(first.commandId, request.requestedAt);
-  assert.equal(first.commandRemainingMs, MOVE_DURATION_MS);
-  clock += 4000;
-  const later = lift.controllerConfig(DEFAULT_CONFIG);
-  assert.equal(later.commandId, first.commandId);
-  assert.equal(later.commandRemainingMs, MOVE_DURATION_MS - 4000);
-  clock += MOVE_DURATION_MS;
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'stop');
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).commandRemainingMs, null);
 });

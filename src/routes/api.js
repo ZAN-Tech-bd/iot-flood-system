@@ -50,6 +50,7 @@ export function createApiRouter({ config, telemetry, weather, history, lift, io,
         .json({ error: 'Could not save sensor log. Check server storage and retry.' });
     }
     telemetry.commit(snapshot);
+    lift.observeLevel(snapshot.sensorLevel);
     const action = lift.current().action;
     if (
       (action === 'up' && snapshot.upperLimit === true) ||
