@@ -50,7 +50,7 @@ export function registerDashboard(
             model,
             sensors: telemetry.snapshot(),
             weather: env,
-            config: lift.controllerConfig(config.get()),
+            config: config.get(),
           }),
         );
       } catch (error) {

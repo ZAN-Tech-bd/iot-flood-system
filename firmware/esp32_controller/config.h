@@ -1,10 +1,17 @@
 ﻿#pragma once
 // Replace with your 2.4 GHz Wi-Fi credentials and the server computer's LAN IP.
+// constexpr char WIFI_SSID[] = "mahabi";
+// constexpr char WIFI_PASSWORD[] = "12345678";
 constexpr char WIFI_SSID[] = "zantech";
 constexpr char WIFI_PASSWORD[] = "88888888";
 constexpr char SERVER_URL[] = "http://192.168.0.103:3000/api/esp";
 constexpr int WATER_RAW_EMPTY = 100;
 constexpr int WATER_RAW_FULL = 1100;
-constexpr int MOTOR_RUN_PWM = 700; // 10-bit PWM: 0-1023
 static_assert(WATER_RAW_FULL > WATER_RAW_EMPTY, "Water calibration must increase");
-static_assert(MOTOR_RUN_PWM > 0 && MOTOR_RUN_PWM <= 1023, "Invalid PWM");
+
+// Local access point and hysteresis from the working controller.
+constexpr char LOCAL_AP_SSID[] = "WaterMotor-ESP32";
+constexpr char LOCAL_AP_PASSWORD[] = "Water1234";
+constexpr int WATER_WET_THRESHOLD = 500;
+constexpr int WATER_DRY_THRESHOLD = 300;
+static_assert(WATER_DRY_THRESHOLD < WATER_WET_THRESHOLD, "Invalid water hysteresis");

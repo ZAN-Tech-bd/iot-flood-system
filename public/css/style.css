@@ -824,7 +824,17 @@ footer {
   animation: lift-arrows 1.4s ease-in-out infinite;
 }
 .house.lifting {
-  animation: lift-glow 1.4s ease-in-out infinite;
+  animation:
+    house-rise 1.6s ease-in-out infinite,
+    lift-glow 1.4s ease-in-out infinite;
+}
+@keyframes house-rise {
+  from {
+    translate: 0 8px;
+  }
+  to {
+    translate: 0 -12px;
+  }
 }
 @keyframes lift-arrows {
   0%,
@@ -859,6 +869,54 @@ footer {
 .history-card {
   padding: 24px;
   margin-bottom: 32px;
+}
+.history-chart-heading {
+  margin-top: 28px;
+}
+.history-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  margin: 18px 0 28px;
+}
+.history-chart {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px;
+  background: #fbfdfc;
+}
+.history-chart h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.history-chart svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.history-chart svg text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.chart-grid {
+  stroke: var(--line);
+  stroke-dasharray: 4 4;
+}
+.history-chart circle:hover,
+.history-chart circle:focus {
+  r: 6;
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+.history-chart-times {
+  text-align: center;
+  margin: 0;
+}
+.history-chart-empty {
+  padding: 45px 0;
+  text-align: center;
 }
 .history-filters {
   display: flex;
@@ -983,7 +1041,9 @@ footer {
   border-color: #adcce5;
 }
 .house.lowering {
-  animation: lift-glow 1.4s ease-in-out infinite;
+  animation:
+    house-rise 1.6s ease-in-out infinite reverse,
+    lift-glow 1.4s ease-in-out infinite;
 }
 @media (max-width: 620px) {
   .lift-controls {

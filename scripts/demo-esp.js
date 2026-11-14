@@ -43,89 +43,75 @@ try {
   };
   await next('configUpdate');
   assert.equal((await next('dashboardUpdate')).sensorLevel, null);
-  await next('liftCommandUpdate');
-  async function request(action) {
-    socket.send('421' + JSON.stringify(['liftCommand', { action }]));
-    return next('ack');
-  }
-  async function post(body) {
-    return fetch(base + '/api/esp', {
+  socket.send('421' + JSON.stringify(['liftCommand', { action: 'up' }]));
+  assert.match((await next('ack')).error, /fresh/);
+  const post = (body) =>
+    fetch(base + '/api/esp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-  }
-  async function reading(level, distanceCm, motorDirection) {
-    const payload = {
-      level,
-      distanceCm,
-      motorActive: motorDirection !== 'stopped',
-      motorDirection,
-    };
-    const response = await post(payload);
+  const samples = [
+    { level: 0, waterRaw: 0, distanceCm: 20, motorActive: true, motorDirection: 'down' },
+    { level: 0, waterRaw: 1, distanceCm: 25, motorActive: true, motorDirection: 'down' },
+    { level: 42, waterRaw: 520, distanceCm: 95.5, motorActive: true, motorDirection: 'up' },
+    {
+      level: 42,
+      waterRaw: 520,
+      distanceCm: 95.5,
+      motorActive: false,
+      motorDirection: 'stopped',
+      upperLimit: true,
+    },
+    {
+      level: 0,
+      waterRaw: 0,
+      distanceCm: 20,
+      motorActive: false,
+      motorDirection: 'stopped',
+      lowerLimit: true,
+    },
+  ];
+  for (const sample of samples) {
+    const response = await post(sample);
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get('cache-control'), 'no-store');
-    const command = await response.json();
+    const reply = await response.json();
+    assert.equal(reply.ok, true);
+    assert.equal(reply.controlMode, 'local');
+    assert.equal(reply.liftCommand, null);
     const update = await next('dashboardUpdate');
-    assert.equal(update.sensorLevel, level);
-    assert.equal(update.distanceCm, distanceCm);
-    assert.equal(update.motorDirection, motorDirection);
-    assert.equal(update.motorActive, payload.motorActive);
-    assert.equal(
-      update.houseHeightCm,
-      distanceCm === null ? null : Math.max(0, distanceCm - command.baselineCm),
-    );
+    assert.equal(update.waterRaw, sample.waterRaw);
+    assert.equal(update.motorDirection, sample.motorDirection);
     console.log(
-      `ESP -> POST ${JSON.stringify(payload)} -> HTTP 200; server command=${command.liftCommand}; dashboard updated`,
+      'ESP telemetry -> HTTP 200, raw=' +
+        update.waterRaw +
+        ', actual motor=' +
+        update.motorDirection,
     );
-    return command;
   }
-  assert.match((await request('up')).error, /fresh/);
-  console.log('PASS: movement rejected before first ESP reading');
-  assert.equal((await reading(10, 20, 'stopped')).liftCommand, 'auto');
-  const accepted = await request('up');
-  assert.equal(accepted.ok, true);
-  const up = await reading(85, 35, 'up');
-  assert.equal(up.liftCommand, 'up');
-  assert.equal(up.commandId, accepted.command.requestedAt);
-  assert.equal(up.commandRemainingMs, null);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  const repeated = await reading(90, 45, 'up');
-  assert.equal(repeated.commandId, up.commandId);
-  assert.equal(repeated.commandRemainingMs, null);
-  assert.match((await request('down')).error, /Stop/);
-  assert.equal((await request('stop')).ok, true);
-  assert.equal((await reading(90, 45, 'stopped')).liftCommand, 'stop');
-  assert.equal((await request('down')).ok, true);
-  assert.equal((await reading(15, 30, 'down')).liftCommand, 'down');
-  assert.equal((await request('stop')).ok, true);
-  assert.equal((await reading(10, null, 'stopped')).liftCommand, 'stop');
-  console.log(
-    'PASS: Up/Stop/Down/Stop, reversal interlock, commands without a time limit, and missing ultrasonic echo',
-  );
-  for (const bad of [
-    { level: 101, motorActive: false },
-    { level: 30, distanceCm: -1, motorActive: false },
-    { level: 30, motorActive: false, motorDirection: 'up' },
-  ])
-    assert.equal((await post(bad)).status, 400);
-  let history = await (await fetch(base + '/api/history')).json();
-  assert.equal(history.items.length, 6);
-  assert.ok(history.items.some(({ sensors }) => sensors.motorDirection === 'down'));
-  console.log('PASS: invalid payloads rejected; all 6 accepted readings saved in SQLite');
+  for (const action of ['up', 'down', 'stop']) {
+    socket.send('421' + JSON.stringify(['liftCommand', { action }]));
+    const accepted = await next('ack');
+    assert.equal(accepted.ok, true);
+    const response = await post(samples[0]);
+    const delivered = await response.json();
+    assert.equal(delivered.liftCommand, action);
+    assert.equal(delivered.commandId, accepted.command.id);
+    await next('dashboardUpdate');
+  }
+  console.log('PASS: optional dashboard Up/Down/Stop is delivered through polling');
+  assert.equal((await post({ level: 0, waterRaw: -1, motorActive: false })).status, 400);
+  assert.equal((await post({ level: 0, waterRaw: 4096, motorActive: false })).status, 400);
   const record = application.history.record;
   application.history.record = () => {
-    throw new Error('Simulated disk failure');
+    throw new Error('Simulated storage failure');
   };
-  assert.equal((await post({ level: 50, motorActive: false })).status, 503);
+  assert.equal((await post(samples[0])).status, 503);
   application.history.record = record;
-  assert.equal(application.telemetry.snapshot().sensorLevel, 10);
-  console.log('PASS: storage failure returns 503 without accepting or broadcasting telemetry');
-  console.log('Checking click-again Stop and automatic resume at zero water...');
-  assert.equal((await request('up')).ok, true);
-  assert.equal((await request('up')).command.action, 'stop');
-  assert.equal((await reading(10, 20, 'stopped')).liftCommand, 'stop');
-  assert.equal((await reading(0, 20, 'stopped')).liftCommand, 'auto');
+  assert.equal(
+    (await (await fetch(base + '/api/history')).json()).items.length,
+    samples.length + 3,
+  );
   socket.close();
   socket = null;
   await application.close();
@@ -137,14 +123,12 @@ try {
       throw new Error('Simulated weather outage');
     },
   });
-  assert.equal(application.history.list().items.length, 8);
-  assert.equal(application.lift.current().action, null);
+  assert.equal(application.history.list().items.length, samples.length + 3);
+  assert.equal(application.history.list().items[0].sensors.waterRaw, 0);
   console.log(
-    'PASS: click-again stops and zero water resumes auto; history survives server restart; transient commands clear',
+    'PASS: raw telemetry, dashboard broadcasts, validation, storage errors, and restart persistence',
   );
-  console.log(
-    'DEMO PASSED. This verifies the server protocol, not physical ESP32 Wi-Fi, firmware execution, or motor wiring.',
-  );
+  console.log('DEMO PASSED. ESP32 firmware and physical offline motion still need a board test.');
 } finally {
   socket?.close();
   await application?.close();

@@ -4,7 +4,21 @@ DPI MODEL — FLOOD-PROOF HYDRAULIC FARM & PROJECT SYSTEM A Smart Dynamic-Elevat
 
 ![DPI project team logo](public/assets/images/team-logo.png)
 
-A local dashboard for a house mounted on a vertical lift. It shows water level, ultrasonic distance, calculated house height, motor status, weather, Gemini feedback, and persistent sensor/weather history.
+An offline ESP32 controller and monitoring dashboard for a house mounted on a vertical lift. It shows water level, ultrasonic distance, calculated house height, motor status, weather, Gemini feedback, and persistent sensor/weather history.
+
+## Circuit diagram and dashboard preview
+
+The connection diagram follows the current ESP32-WROOM-32 firmware, including Up on GPIO32, Down on GPIO33, both travel limits and the ultrasonic ECHO voltage divider. GPIO20 is unavailable on this module. See the [hardware guide](docs/hardware.md) before wiring.
+
+![ESP32 lift-system circuit diagram](docs/images/circuit-diagram.png)
+
+[Download circuit PNG](docs/images/circuit-diagram.png) · [Scalable SVG](docs/images/circuit-diagram.svg)
+
+The dashboard preview uses the actual application layout with **illustrative sample sensor readings and weather**, not live device measurements.
+
+![Dashboard preview with sample data](docs/images/dashboard-demo.png)
+
+[Download dashboard PNG](docs/images/dashboard-demo.png) · [Open standalone demo](docs/images/dashboard-demo.html)
 
 ## Set up on another PC: step by step
 
@@ -100,7 +114,7 @@ If you change `PORT` in `.env`, restart the server and use the new port in the b
 5. Click **Save configuration**.
 6. Return to **Overview** and check the local weather.
 
-Settings contains location and Gemini connection only. Internal lift thresholds, mode, and calibration remain in `src/config/defaults.js`, overridden by existing `data/config.json` values. These internal values are preserved when saving dashboard settings.
+Settings contains location and Gemini connection only. Motor control runs entirely on the ESP32. Water thresholds and network settings are configured in `firmware/esp32_controller/config.h`; the server baseline only affects displayed elevation.
 
 ### Step 7 — Connect the ESP32/controller to the new PC
 
@@ -130,7 +144,7 @@ Use the new PC's LAN address on the controller, **not `localhost`**. Another dev
 
 Mount the ultrasonic sensor on the house facing down toward a fixed ground reference. House elevation is `max(0, distanceCm - baselineCm)`. With a 20 cm baseline and 95.5 cm distance, height is 75.5 cm. A sensor pointing at changing water measures water clearance rather than ground-relative elevation.
 
-The controller receives `mode`, `manualState`, `liftCommand`, `commandExpiresAt`, `startLevel`, `stopLevel`, `maxHeightCm`, and `baselineCm` in the response. Implement travel limits, motor interlocks, emergency stop, limit switches, and sensor failure handling on the controller. Gemini never controls the motor.
+The server acknowledges telemetry with `{ "ok": true, "controlMode": "local" }`. Optional dashboard requests are returned as liftCommand with a unique commandId; local automatic control does not depend on receiving them. Wi-Fi, HTTP failure, server shutdown and browser closure do not interrupt local lift operation.
 
 ### Step 8 — Verify the installation
 
@@ -144,21 +158,11 @@ This creates a real saved log containing example values. Do not confuse it with 
 
 Open **Sensor history**, click **Today** or **All dates**, and confirm that a row appears. Restart the server and reopen history to confirm the log remains saved. Gemini feedback requires a key, fresh sensor data, and available current weather.
 
-## Dashboard lift controls
+## Local lift control and dashboard monitoring
 
-### Control a real controller
+The firmware follows the supplied working controller: GPIO32/33 physical buttons, wet/dry ADC hysteresis at 500/300, active-low travel limits and full-duty analogWrite motor output. Forward means Up; reverse means Down. Physical buttons apply while held. The ESP32-hosted page provides Forward, Reverse, AUTO and persistent STOP commands.
 
-The dashboard uses actual controller feedback for house height and animation. Up, Down and Stop are connected to the server command system. The included [ESP32 firmware](docs/hardware.md) also supports physical Up (GPIO15) and Down (GPIO33) buttons connected to GND. GPIO20 is unavailable on ESP32-WROOM-32. Until the controller connects, Up and Down stay disabled and measurements remain unavailable.
-
-Overview has **Up**, **Down**, and **Stop** buttons. Up and Down require controller readings younger than 30 seconds. Stop can be sent even when readings are stale, provided the dashboard is connected to the server. Acknowledgement means the server accepted the request; actual motion is reported separately by the controller.
-
-- Up/Down have no movement duration limit. Click the active direction again or Stop to halt. Limits and the communication watchdog remain active. In automatic mode any water above 0% requests Up and 0% requests Down.
-- Press Stop before reversing direction. Stop holds until the wet/dry sensor state changes, then automatic mode resumes.
-- Dashboard commands live in server memory. Restart clears them and returns to the saved configuration. Saving location or Gemini settings does not clear an active command.
-- The controller receives liftCommand (up/down/stop/auto) and commandExpiresAt in its next POST /api/esp response. The included firmware implements both directions and local travel limits.
-- Report optional motorDirection: up or down while motorActive is true, and stopped while false. Without direction feedback the UI says “Lift motor running” rather than assuming direction.
-
-Older controllers that only read manualState can still lift with Up and halt with Stop, but **cannot lower using Down**. Down deliberately sends manualState=false so an older lift-only controller cannot raise the house accidentally. Updated firmware must use liftCommand for direction, enforce local travel limits and stop if server polling fails. Movement has no duration timeout. This browser control is not a substitute for a hardware emergency stop, travel switches, or reversing interlocks.
+The ESP32 runs a local access point and optionally joins the configured router to upload telemetry. The main dashboard monitors actual direction and animates the house while moving. Ultrasonic readings are for monitoring; they do not block motion in this controller. See the [hardware guide](docs/hardware.md) for wiring, control priority and connection instructions.
 
 ## Sensor and weather history
 
@@ -255,3 +259,7 @@ Development mode restarts the backend after source edits; refresh the browser af
 See [architecture](docs/architecture.md), [API reference](docs/api.md), and [hardware integration](docs/hardware.md).
 
 Provider references: [Open-Meteo weather](https://open-meteo.com/en/docs), [geocoding](https://open-meteo.com/en/docs/geocoding-api), [flood model](https://open-meteo.com/en/docs/flood-api), [Gemini JavaScript SDK](https://googleapis.github.io/js-genai/), and [country-state-city directory](https://github.com/harpreetkhalsagtbit/country-state-city). The directory is not a guarantee of every settlement.
+
+## Firmware scheduling
+
+Local control, OLED, local web requests and ultrasonic monitoring run in the Arduino loop, matching the supplied working sketch. A separate telemetry task on core 0 uploads queue snapshots without waiting in the control loop. See the [hardware guide](docs/hardware.md) for timing and behavior.

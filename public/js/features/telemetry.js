@@ -70,6 +70,7 @@ export function initTelemetry(socket) {
     telemetry = data;
     setText('height', number(data.houseHeightCm, 'cm'));
     setText('water', number(data.sensorLevel, '%'));
+    setText('waterRaw', `Raw ADC: ${data.waterRaw ?? 'unavailable'}`);
     setText('distance', number(data.distanceCm, 'cm'));
     setText(
       'sceneHeight',
@@ -87,7 +88,7 @@ export function initTelemetry(socket) {
       'waterHint',
       data.sensorLevel === null
         ? 'Waiting for water sensor'
-        : data.sensorLevel > 0
+        : (data.waterRaw ?? data.sensorLevel) > 0 && data.sensorLevel > 0
           ? 'Water detected · automatic target: Up'
           : 'No water detected · automatic target: Down',
     );

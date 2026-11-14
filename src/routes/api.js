@@ -50,18 +50,13 @@ export function createApiRouter({ config, telemetry, weather, history, lift, io,
         .json({ error: 'Could not save sensor log. Check server storage and retry.' });
     }
     telemetry.commit(snapshot);
-    lift.observeLevel(snapshot.sensorLevel);
-    const action = lift.current().action;
-    if (
-      (action === 'up' && snapshot.upperLimit === true) ||
-      (action === 'down' && snapshot.lowerLimit === true)
-    )
-      lift.request('stop');
     io.emit('dashboardUpdate', snapshot);
-    const { mode, manualState, startLevel, stopLevel, maxHeightCm, baselineCm } = config.get();
-    res.json(
-      lift.controllerConfig({ mode, manualState, startLevel, stopLevel, maxHeightCm, baselineCm }),
-    );
+    res.json({
+      ok: true,
+      controlMode: 'local',
+      liftCommand: lift.current().action,
+      commandId: lift.current().id,
+    });
   });
   return router;
 }

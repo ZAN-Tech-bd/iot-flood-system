@@ -1,4 +1,5 @@
-﻿import { $, number } from '../lib/dom.js';
+import { renderHistoryCharts } from './history-charts.js';
+import { $, number } from '../lib/dom.js';
 
 export function initHistory() {
   let nextCursor = null,
@@ -54,6 +55,7 @@ export function initHistory() {
       fragment.append(row);
     }
     $('historyRows').replaceChildren(fragment);
+    renderHistoryCharts($('historyCharts'), items);
   }
   async function load(reset = true, targetCursor = null, targetPrevious = []) {
     const version = ++requestVersion;

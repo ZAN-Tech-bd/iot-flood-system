@@ -1,3 +1,4 @@
+import { createLiftControl } from './services/lift-control.js';
 import express from 'express';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
@@ -11,7 +12,6 @@ import { createApiRouter } from './routes/api.js';
 import { registerDashboard } from './realtime/dashboard.js';
 import { join, dirname } from 'node:path';
 import { createHistoryStore } from './services/history-store.js';
-import { createLiftControl } from './services/lift-control.js';
 // Dependencies can be replaced in tests; importing the app never binds a port.
 export async function createApplication(options = {}) {
   const app = express();
@@ -52,19 +52,17 @@ export async function createApplication(options = {}) {
     });
   });
   registerDashboard(io, {
+    lift,
     config,
     telemetry,
     weather,
     generateFeedback: options.generateFeedback || generateFeedback,
     model: options.model || 'gemini-2.5-flash',
-    lift,
   });
   const timer = setInterval(() => {
     void weather.refresh();
   }, WEATHER_REFRESH_MS);
   timer.unref();
-  const commandTimer = setInterval(() => lift.current(), 1000);
-  commandTimer.unref();
   void weather.refresh();
   return {
     app,
@@ -74,10 +72,8 @@ export async function createApplication(options = {}) {
     telemetry,
     weather,
     history,
-    lift,
     async close() {
       clearInterval(timer);
-      clearInterval(commandTimer);
       await new Promise((resolve) => io.close(resolve));
       history.close();
     },

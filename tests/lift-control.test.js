@@ -1,59 +1,44 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLiftControl } from '../src/services/lift-control.js';
-import { DEFAULT_CONFIG } from '../src/config/defaults.js';
 import { validateTelemetry } from '../src/domain/validation.js';
 
-test('manual movement has no deadline; repeated direction toggles Stop and reversing requires Stop', () => {
-  let fresh = true,
-    clock = Date.now();
-  const lift = createLiftControl({ isFresh: () => fresh, onChange: () => {}, now: () => clock });
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'auto');
-  const up = lift.request('up');
-  assert.equal(up.expiresAt, null);
-  clock += 3600000;
-  assert.equal(lift.current().action, 'up');
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).commandRemainingMs, null);
-  assert.throws(() => lift.request('down'), /Stop/);
-  assert.equal(lift.request('up').action, 'stop');
-  assert.equal(lift.request('down').action, 'down');
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).manualState, false);
-  assert.equal(lift.request('down').action, 'stop');
-  fresh = false;
+test('raw ADC stays independent of calibrated percentage for local control telemetry', () => {
+  const sample = validateTelemetry({
+    level: 0,
+    waterRaw: 1,
+    motorActive: true,
+    motorDirection: 'up',
+  });
+  assert.equal(sample.sensorLevel, 0);
+  assert.equal(sample.waterRaw, 1);
+  assert.equal(sample.motorDirection, 'up');
+  assert.equal(validateTelemetry({ level: 0, motorActive: false }).waterRaw, null);
+  for (const waterRaw of [-1, 4096, 0.5, '12'])
+    assert.throws(() => validateTelemetry({ level: 0, waterRaw, motorActive: false }));
+});
+
+test('reported motor direction and limit input types remain validated', () => {
+  for (const extra of [{ motorDirection: 'up' }, { upperLimit: 'yes' }, { lowerLimit: 1 }])
+    assert.throws(() => validateTelemetry({ level: 0, motorActive: false, ...extra }));
+  assert.equal(
+    validateTelemetry({ level: 0, motorActive: false, motorDirection: 'stopped', lowerLimit: true })
+      .lowerLimit,
+    true,
+  );
+});
+
+test('optional commands keep their ID across polling and do not require a timed movement window', async () => {
+  const { createLiftControl } = await import('../src/services/lift-control.js');
+  let fresh = false;
+  const lift = createLiftControl({ isFresh: () => fresh, onChange: () => {} });
+  assert.equal(lift.current().action, null);
   assert.throws(() => lift.request('up'), /fresh/);
   assert.equal(lift.request('stop').action, 'stop');
-  assert.throws(() => lift.request('sideways'), /Choose/);
-});
-
-test('Stop holds through polls and resumes automatic mode only on a wet/dry transition', () => {
-  const lift = createLiftControl({ isFresh: () => true, onChange: () => {} });
-  lift.observeLevel(5);
-  lift.request('stop');
-  lift.observeLevel(20);
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'stop');
-  lift.observeLevel(0);
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'auto');
-  lift.request('stop');
-  lift.observeLevel(0);
-  assert.equal(lift.current().action, 'stop');
-  lift.observeLevel(0.1);
-  assert.equal(lift.controllerConfig(DEFAULT_CONFIG).liftCommand, 'auto');
-  assert.equal(
-    createLiftControl({ isFresh: () => true, onChange: () => {} }).current().action,
-    null,
-  );
-});
-
-test('actual motor direction is validated independently of the requested command', () => {
-  assert.equal(
-    validateTelemetry({ level: 40, motorActive: true, motorDirection: 'down' }).motorDirection,
-    'down',
-  );
-  assert.equal(validateTelemetry({ level: 40, motorActive: true }).motorDirection, null);
-  for (const input of [
-    { level: 40, motorActive: false, motorDirection: 'up' },
-    { level: 40, motorActive: true, motorDirection: 'stopped' },
-    { level: 40, motorActive: true, motorDirection: 'invalid' },
-  ])
-    assert.throws(() => validateTelemetry(input));
+  fresh = true;
+  const up = lift.request('up');
+  assert.deepEqual(lift.current(), up);
+  assert.equal('expiresAt' in up, false);
+  const down = lift.request('down');
+  assert.notEqual(down.id, up.id);
+  assert.equal(down.action, 'down');
 });

@@ -3,6 +3,7 @@ import { validateTelemetry } from '../domain/validation.js';
 export function createTelemetryStore(getConfig) {
   let reading = {
     sensorLevel: null,
+    waterRaw: null,
     distanceCm: null,
     motorActive: null,
     motorDirection: null,

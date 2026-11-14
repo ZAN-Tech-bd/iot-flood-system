@@ -198,15 +198,13 @@ test('frontend modules initialize and preserve location, telemetry, settings, an
   });
   assert.equal($('height').textContent, '75.5 cm');
   assert.equal($('liftStatus').textContent, 'House is lifting');
+  assert.equal($('house').classes.has('lifting'), true);
+  assert.equal($('house').classes.has('lowering'), false);
   assert.equal($('liftArrows').hidden, false);
-  assert.equal($('liftUp').disabled, false);
-  $('liftUp').dispatch('click');
-  assert.equal(emitted.find(([name]) => name === 'liftCommand')[1].action, 'stop');
-  deliver('liftCommandUpdate', {
-    action: 'down',
-    expiresAt: new Date(Date.now() + 15000).toISOString(),
-  });
-  assert.equal($('liftStatus').textContent, 'House is lifting');
+  assert.equal(
+    emitted.some(([name]) => name === 'liftCommand'),
+    false,
+  );
   deliver('dashboardUpdate', {
     sensorLevel: 42,
     distanceCm: 95.5,
@@ -216,32 +214,13 @@ test('frontend modules initialize and preserve location, telemetry, settings, an
     updatedAt: new Date().toISOString(),
   });
   assert.equal($('liftStatus').textContent, 'House is lowering');
+  assert.equal($('house').classes.has('lowering'), true);
+  assert.equal($('house').classes.has('lifting'), false);
   assert.equal($('liftArrows').textContent, '↓ ↓ ↓');
-  for (const [limit, message, blocked, allowed] of [
-    ['upperLimit', 'Upper limit reached · lifting stopped', 'liftUp', 'liftDown'],
-    ['lowerLimit', 'Lower limit reached · lifting stopped', 'liftDown', 'liftUp'],
-  ]) {
-    deliver('dashboardUpdate', {
-      sensorLevel: 42,
-      distanceCm: 95.5,
-      houseHeightCm: 75.5,
-      motorActive: false,
-      motorDirection: 'stopped',
-      upperLimit: false,
-      lowerLimit: false,
-      [limit]: true,
-      updatedAt: new Date().toISOString(),
-    });
-    assert.equal($('liftCommandState').textContent, message);
-    assert.equal($(blocked).disabled, true);
-    assert.equal($(allowed).disabled, false);
-  }
   socket.connected = false;
   deliver('disconnect');
   assert.equal($('liftStatus').textContent, 'Lift status unavailable');
   assert.equal($('liftArrows').hidden, true);
-  assert.equal($('liftUp').disabled, true);
-  assert.equal($('liftStop').disabled, true);
   socket.connected = true;
   deliver('connect');
   deliver('dashboardUpdate', {
@@ -252,6 +231,8 @@ test('frontend modules initialize and preserve location, telemetry, settings, an
     updatedAt: new Date().toISOString(),
   });
   assert.equal($('liftStatus').textContent, 'House is stationary');
+  assert.equal($('house').classes.has('lifting'), false);
+  assert.equal($('house').classes.has('lowering'), false);
   deliver('dashboardUpdate', {
     sensorLevel: 42,
     distanceCm: 95.5,

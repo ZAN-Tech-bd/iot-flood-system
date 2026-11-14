@@ -12,7 +12,6 @@ export function initSettings(socket, picker) {
       lat: data.lat,
       lon: data.lon,
     });
-    setText('modeLabel', data.mode === 'auto' ? 'Automatic operation' : 'Manual override');
     setText(
       'keyStatus',
       data.apiKeyConfigured

@@ -43,6 +43,11 @@ export function validateConfig(input) {
 export function validateTelemetry(input) {
   if (!input || typeof input !== 'object') throw new Error('Invalid telemetry.');
   const { level, distanceCm, motorActive, motorDirection } = input;
+  if (
+    input.waterRaw != null &&
+    (!Number.isInteger(input.waterRaw) || input.waterRaw < 0 || input.waterRaw > 4095)
+  )
+    throw new Error('waterRaw must be an integer between 0 and 4095.');
   for (const key of ['upperLimit', 'lowerLimit']) {
     if (input[key] != null && typeof input[key] !== 'boolean')
       throw new Error(`${key} must be a boolean.`);
@@ -66,6 +71,7 @@ export function validateTelemetry(input) {
     throw new Error('Send level (0–100), motorActive (boolean), and optional distanceCm (0–1000).');
   return {
     sensorLevel: level,
+    waterRaw: input.waterRaw ?? null,
     distanceCm: distanceCm ?? null,
     motorActive,
     motorDirection: motorDirection ?? null,

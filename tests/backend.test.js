@@ -175,7 +175,6 @@ test(
     const config = await socket.next('configUpdate');
     assert.equal('apiKey' in config, false);
     assert.equal((await socket.next('dashboardUpdate')).sensorLevel, null);
-    assert.equal((await socket.next('liftCommandUpdate')).action, null);
     socket.ws.send('421' + JSON.stringify(['liftCommand', { action: 'up' }]));
     assert.match((await socket.next('ack')).error, /fresh/);
     socket.ws.send('42["requestAnalysis"]');
@@ -223,36 +222,19 @@ test(
     assert.equal(analysisInput.sensors.houseHeightCm, 65.5);
     assert.equal(analysisInput.weather.current.temperature_2m, 26);
     assert.equal(JSON.stringify(analysisInput.config).includes('private-test-key'), false);
-    for (const action of ['up', 'stop', 'down', 'stop']) {
-      socket.ws.send('422' + JSON.stringify(['liftCommand', { action }]));
-      assert.equal((await socket.next('ack')).command.action, action);
-      assert.equal((await socket.next('liftCommandUpdate')).action, action);
-      const response = await post({ level: 42, distanceCm: 95.5, motorActive: false });
-      const command = await response.json();
-      assert.equal(command.liftCommand, action);
-      assert.equal(command.mode, 'manual');
-      assert.equal(command.manualState, action === 'up');
-      assert.equal((await socket.next('dashboardUpdate')).motorActive, false);
-    }
-    for (const [action, limit] of [
-      ['up', 'upperLimit'],
-      ['down', 'lowerLimit'],
-    ]) {
+    for (const action of ['up', 'down', 'stop']) {
       socket.ws.send('422' + JSON.stringify(['liftCommand', { action }]));
       assert.equal((await socket.next('ack')).ok, true);
-      const response = await post({
-        level: 42,
-        distanceCm: 95.5,
-        motorActive: false,
-        motorDirection: 'stopped',
-        upperLimit: false,
-        lowerLimit: false,
-        [limit]: true,
-      });
-      assert.equal((await response.json()).liftCommand, 'stop');
-      assert.equal(application.telemetry.snapshot()[limit], true);
-      assert.equal(application.lift.current().action, 'stop');
     }
+    for (const waterRaw of [0, 1, 4095]) {
+      const response = await post({ level: 0, waterRaw, distanceCm: 25, motorActive: false });
+      const reply = await response.json();
+      assert.equal(reply.controlMode, 'local');
+      assert.equal(reply.liftCommand, 'stop');
+      assert.ok(reply.commandId);
+      assert.equal((await socket.next('dashboardUpdate')).waterRaw, waterRaw);
+    }
+    assert.equal((await post({ level: 0, waterRaw: 4096, motorActive: false })).status, 400);
     assert.equal((await post({ level: 42, motorActive: false, upperLimit: 'yes' })).status, 400);
   },
 );

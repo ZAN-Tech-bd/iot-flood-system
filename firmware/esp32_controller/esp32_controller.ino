@@ -1,261 +1,785 @@
-﻿#include <Arduino.h>
-#include <Wire.h>
-#include <U8g2lib.h>
-#include <WiFi.h>
+#include <Arduino.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "config.h"
 
-// Arduino-ESP32 3.x. WROOM-32 has no usable GPIO20; Down uses GPIO33.
-constexpr int RPWM = 25, LPWM = 26, R_EN = 27, L_EN = 14;
-constexpr int WATER = 34, TRIG = 18, ECHO = 19, BUZZER = 23;
-constexpr int FORWARD_LIMIT = 16, BACKWARD_LIMIT = 4;
-constexpr int UP_BUTTON = 15, DOWN_BUTTON = 33;
-constexpr uint32_t WATCHDOG_MS = 3500;
-U8G2_SH1106_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
+#include <WiFi.h>
+#include <WebServer.h>
+#include <Wire.h>
+#include <U8g2lib.h>
 
-// Only loop() touches motor outputs and sensors. HTTP runs in another task.
-struct Reading { float level, distance; int direction; bool upperLimit, lowerLimit; };
-struct Command {
-  bool valid;
-  int action; // 0 stop, 1 up, -1 down, 2 auto
-  float startLevel, stopLevel, baseline, maxHeight;
-  char id[40];
+// =====================================
+// OLED DISPLAY
+// =====================================
+
+U8G2_SH1106_128X64_NONAME_F_HW_I2C oled(
+  U8G2_R0, U8X8_PIN_NONE
+);
+
+// =====================================
+// WIFI ACCESS POINT
+// =====================================
+
+const char* ssid = LOCAL_AP_SSID;
+const char* password = LOCAL_AP_PASSWORD;
+
+WebServer server(80);
+
+// =====================================
+// PIN CONFIGURATION
+// =====================================
+
+// Water Sensor
+#define WATER 34
+
+// BTS7960
+#define RPWM 25
+#define LPWM 26
+#define REN 27
+#define LEN 14
+
+// Buttons
+#define FWD_BUTTON 32
+#define REV_BUTTON 33
+
+// Limit Switches
+#define FWD_LIMIT 16
+#define REV_LIMIT 4
+
+// OLED I2C
+#define SDA_PIN 21
+#define SCL_PIN 22
+
+// Water Thresholds
+#define WET_THRESHOLD WATER_WET_THRESHOLD
+#define DRY_THRESHOLD WATER_DRY_THRESHOLD
+
+// =====================================
+// GLOBAL VARIABLES
+// =====================================
+
+bool waterDetected = false;
+
+// Web command:
+// 0 = AUTO
+// 1 = FORWARD
+// -1 = REVERSE
+// 2 = EMERGENCY STOP
+
+int webCommand = 0;
+
+String motorStatus = "STOP";
+
+int waterValue = 0;
+
+bool fwdButton = false;
+bool revButton = false;
+bool fwdLimit = false;
+bool revLimit = false;
+
+// Telemetry uses a queue: HTTP never delays the local control loop.
+struct TelemetryReading {
+  int raw, direction;
+  float distance;
+  bool upper, lower;
 };
-QueueHandle_t readings, commands;
-Command command = {};
-bool pwmReady = false, connected = false, autoRaised = false, runLocked = false;
-float waterLevel = 0, distanceCm = -1;
-int currentDirection = 0, pendingDirection = 0;
-uint32_t lastStopped = 0, lastContact = 0;
-// 2 means use server/automatic control; -1/0/1 are a physical-button override.
-int buttonOverride = 2;
-bool buttonWaterDetected = false;
-struct DirectionButton {
-  int pin;
-  bool raw = HIGH, stable = HIGH, armed = false;
-  uint32_t changedAt = 0;
-};
-DirectionButton upButton{UP_BUTTON}, downButton{DOWN_BUTTON};
-void stopMotor();
-bool buttonPressed(DirectionButton &button);
-bool buttonsBlocked = false;
+QueueHandle_t telemetryQueue = nullptr;
 
-bool buttonPressed(DirectionButton &button) {
-  bool raw = digitalRead(button.pin);
-  if (raw != button.raw) { button.raw = raw; button.changedAt = millis(); }
-  if (millis() - button.changedAt < 25) return false;
-  if (raw == HIGH) button.armed = true;
-  if (raw == button.stable) return false;
-  button.stable = raw;
-  if (raw == LOW && button.armed) { button.armed = false; return true; }
-  return false;
-}
-
-void updateDirectionButtons() {
-  bool up = buttonPressed(upButton), down = buttonPressed(downButton);
-  bool bothHeld = digitalRead(UP_BUTTON) == LOW && digitalRead(DOWN_BUTTON) == LOW;
-  if (bothHeld) buttonsBlocked = true;
-  if (buttonsBlocked && !bothHeld) {
-    // Release both before accepting another press after a conflicting request.
-    if (digitalRead(UP_BUTTON) == HIGH && digitalRead(DOWN_BUTTON) == HIGH)
-      buttonsBlocked = false;
-    return;
-  }
-  if (!bothHeld && !up && !down) return;
-  int direction = up ? 1 : -1;
-  // Click an already-running direction again to stop; both pressed always stop.
-  buttonOverride = bothHeld || currentDirection == direction || buttonOverride == direction ? 0 : direction;
-  buttonWaterDetected = waterLevel > 0;
-  runLocked = false;
-  if (buttonOverride == 0) stopMotor();
-}
-
-void stopMotor() {
-  if (pwmReady) { ledcWrite(RPWM, 0); ledcWrite(LPWM, 0); }
-  digitalWrite(R_EN, LOW); digitalWrite(L_EN, LOW);
-  if (currentDirection) lastStopped = millis();
-  currentDirection = 0;
-}
-
-void networkTask(void *) {
-  uint32_t retry = 0;
+void telemetryTask(void *) {
+  uint32_t retryAt = 0;
   for (;;) {
-    Reading reading;
     if (WiFi.status() != WL_CONNECTED) {
-      if (millis() - retry >= 5000) { WiFi.reconnect(); retry = millis(); }
-      Command failed = {}; xQueueOverwrite(commands, &failed);
-    } else if (xQueuePeek(readings, &reading, 0) == pdTRUE) {
-      JsonDocument payload;
-      payload["level"] = reading.level;
-      if (reading.distance >= 0) payload["distanceCm"] = reading.distance;
-      else payload["distanceCm"] = nullptr;
-      payload["motorActive"] = reading.direction != 0;
-      payload["upperLimit"] = reading.upperLimit;
-      payload["lowerLimit"] = reading.lowerLimit;
-      payload["motorDirection"] = reading.direction > 0 ? "up" : reading.direction < 0 ? "down" : "stopped";
-      String body; serializeJson(payload, body);
-      WiFiClient client;
-      HTTPClient http;
-      Command next = {};
-      http.setConnectTimeout(1000); http.setTimeout(1000);
-      if (http.begin(client, SERVER_URL)) {
-        http.addHeader("Content-Type", "application/json");
-        int status = http.POST(body);
-        if (status == 200) {
-          JsonDocument reply;
-          if (!deserializeJson(reply, http.getString())) {
-            String action = reply["liftCommand"] | "";
-            bool known = action == "auto" || action == "up" || action == "down" || action == "stop";
-            bool fields = reply["startLevel"].is<float>() && reply["stopLevel"].is<float>() &&
-                          reply["baselineCm"].is<float>() && reply["maxHeightCm"].is<float>();
-            next.startLevel = reply["startLevel"] | -1.f;
-            next.stopLevel = reply["stopLevel"] | -1.f;
-            next.baseline = reply["baselineCm"] | -1.f;
-            next.maxHeight = reply["maxHeightCm"] | -1.f;
-            next.valid = known && fields && next.stopLevel >= 0 && next.startLevel <= 100 &&
-                         next.startLevel > next.stopLevel && next.baseline >= 0 && next.baseline <= 1000 &&
-                         next.maxHeight > 0 && next.maxHeight <= 1000;
-            next.action = action == "up" ? 1 : action == "down" ? -1 : action == "auto" ? 2 : 0;
-            strlcpy(next.id, reply["commandId"] | "", sizeof(next.id));
-          }
-        } else { Serial.printf("Telemetry HTTP: %d\n", status); }
-        http.end();
+      if (millis() - retryAt >= 5000) {
+        WiFi.reconnect();
+        retryAt = millis();
       }
-      xQueueOverwrite(commands, &next);
+    } else {
+      TelemetryReading reading;
+      if (xQueuePeek(telemetryQueue, &reading, 0) == pdTRUE) {
+        JsonDocument payload;
+        payload["waterRaw"] = reading.raw;
+        payload["level"] = constrain(100.f * (reading.raw - WATER_RAW_EMPTY) / (WATER_RAW_FULL - WATER_RAW_EMPTY), 0.f, 100.f);
+        payload["controlMode"] = "local";
+        payload["motorActive"] = reading.direction != 0;
+        payload["motorDirection"] = reading.direction > 0 ? "up" : reading.direction < 0 ? "down" : "stopped";
+        payload["upperLimit"] = reading.upper;
+        payload["lowerLimit"] = reading.lower;
+        if (reading.distance >= 0) payload["distanceCm"] = reading.distance;
+        else payload["distanceCm"] = nullptr;
+        String body;
+        serializeJson(payload, body);
+        WiFiClient client;
+        HTTPClient http;
+        http.setConnectTimeout(1000);
+        http.setTimeout(1000);
+        if (http.begin(client, SERVER_URL)) {
+          http.addHeader("Content-Type", "application/json");
+          http.POST(body);
+          http.end();
+        }
+      }
     }
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
-void updateSensors() {
-  static uint32_t last = 0;
-  static bool initialized = false;
-  if (millis() - last < 250) return;
-  last = millis();
-  int values[9];
-  for (int &value : values) value = analogRead(WATER);
-  for (int i = 0; i < 8; ++i)
-    for (int j = i + 1; j < 9; ++j)
-      if (values[j] < values[i]) { int v = values[i]; values[i] = values[j]; values[j] = v; }
-  float level = constrain(100.f * (values[4] - WATER_RAW_EMPTY) / (WATER_RAW_FULL - WATER_RAW_EMPTY), 0.f, 100.f);
-  waterLevel = initialized ? waterLevel * .75f + level * .25f : level;
-  // Snap dry readings to zero; an exponential filter otherwise never reaches zero.
-  if (level == 0 || waterLevel < .5f) waterLevel = 0;
-  initialized = true;
-  digitalWrite(TRIG, LOW); delayMicroseconds(2);
-  digitalWrite(TRIG, HIGH); delayMicroseconds(10); digitalWrite(TRIG, LOW);
-  unsigned long duration = pulseIn(ECHO, HIGH, 25000);
-  float cm = duration * .0343f / 2;
-  distanceCm = duration && cm >= 2 && cm <= 400 ? cm : -1;
-  Serial.printf("Water raw=%d level=%.1f distance=%.1f\n", values[4], waterLevel, distanceCm);
+// =====================================
+// MOTOR FUNCTIONS
+// =====================================
+
+void stopMotor() {
+  analogWrite(RPWM, 0);
+  analogWrite(LPWM, 0);
+  motorStatus = "STOP";
 }
 
-void updateControl() {
-  Command next;
-  if (xQueueReceive(commands, &next, 0) == pdTRUE) {
-    if (!next.valid) { connected = false; stopMotor(); }
-    else {
-      // New commands can release the limit latch; physical limits are always rechecked.
-      if (strcmp(next.id, command.id) != 0 || next.action == 0) {
-        runLocked = false;
-      }
-      // Only a NEW dashboard request cancels a physical override, not repeated polls.
-      if (strcmp(next.id, command.id) != 0) buttonOverride = 2;
-      command = next; lastContact = millis(); connected = true;
-    }
-  }
-  uint32_t now = millis();
-  if (!pwmReady || !connected || WiFi.status() != WL_CONNECTED || now - lastContact >= WATCHDOG_MS) {
-    connected = false; stopMotor(); pendingDirection = 0; return;
-  }
-  if (buttonOverride == 0 && buttonWaterDetected != (waterLevel > 0)) buttonOverride = 2;
-  int desired = buttonOverride == 2 ? command.action : buttonOverride;
-  if (buttonsBlocked) desired = 0;
-  if (desired == 2) {
-    bool previousTarget = autoRaised;
-    autoRaised = waterLevel > 0;
-    if (autoRaised != previousTarget) runLocked = false;
-    // Any detected water raises; zero water lowers.
-    desired = autoRaised ? 1 : -1;
-  }
-  // Immediate active-low checks: never debounce assertion of a travel limit.
-  bool upper = digitalRead(FORWARD_LIMIT) == LOW;
-  bool lower = digitalRead(BACKWARD_LIMIT) == LOW;
-  if ((upper && lower) || (desired > 0 && upper) || (desired < 0 && lower)) {
-    desired = 0; runLocked = true;
-  }
-  // Unknown height inhibits motion; limits still allow retreat from either end.
-  if (distanceCm < 0) desired = 0;
-  if (desired > 0 && distanceCm - command.baseline >= command.maxHeight) desired = 0;
-  if (runLocked) desired = 0;
-  if (!desired) { stopMotor(); pendingDirection = 0; return; }
-  if (currentDirection == desired) return;
-  stopMotor();
-  if (pendingDirection != desired) { pendingDirection = desired; lastStopped = now; }
-  if (now - lastStopped < 150) return;
-  digitalWrite(R_EN, HIGH); digitalWrite(L_EN, HIGH);
-  ledcWrite(RPWM, desired > 0 ? MOTOR_RUN_PWM : 0);
-  ledcWrite(LPWM, desired < 0 ? MOTOR_RUN_PWM : 0);
-  currentDirection = desired;
+void forward() {
+  analogWrite(LPWM, 0);
+  analogWrite(RPWM, 255);
+  motorStatus = "FORWARD";
 }
 
-void updateDisplayAndBuzzer() {
-  static uint32_t last = 0, alertStart = 0;
-  static int beepCount = 0;
-  uint32_t now = millis();
-  if (now - alertStart >= 3000) {
-    alertStart = now;
-    beepCount = distanceCm > 0 && distanceCm < 10 ? 3 : waterLevel < 20 ? 2 : 0;
-  }
-  uint32_t phase = now - alertStart;
-  digitalWrite(BUZZER, phase < uint32_t(beepCount * 300) && phase % 300 < 150);
-  if (now - last < 200) return;
-  last = now;
-  oled.clearBuffer(); oled.setFont(u8g2_font_6x10_tf);
-  oled.setCursor(0, 10); oled.print(connected ? "Server: OK" : "Server: OFFLINE");
-  oled.setCursor(0, 23); oled.printf("Motor: %s", currentDirection > 0 ? "UP" : currentDirection < 0 ? "DOWN" : "STOP");
-  oled.setCursor(0, 36); oled.printf("Water: %.0f%%", waterLevel);
-  oled.setCursor(0, 49);
-  if (distanceCm < 0) oled.print("Distance: No echo"); else oled.printf("Distance: %.1f cm", distanceCm);
-  oled.setCursor(0, 62); oled.printf("F:%s B:%s", digitalRead(FORWARD_LIMIT) ? "OK" : "LIMIT", digitalRead(BACKWARD_LIMIT) ? "OK" : "LIMIT");
+void reverse() {
+  analogWrite(RPWM, 0);
+  analogWrite(LPWM, 255);
+  motorStatus = "REVERSE";
+}
+
+// =====================================
+// OLED DISPLAY
+// =====================================
+
+void updateOLED() {
+
+  char buffer[30];
+
+  oled.clearBuffer();
+  oled.setFont(u8g2_font_6x10_tf);
+
+  oled.drawStr(0, 10, "WATER MOTOR CONTROL");
+  oled.drawHLine(0, 13, 128);
+
+  snprintf(buffer, sizeof(buffer),
+           "Water: %d", waterValue);
+  oled.drawStr(0, 25, buffer);
+
+  snprintf(buffer, sizeof(buffer),
+           "Status: %s",
+           waterDetected ? "WET" : "DRY");
+  oled.drawStr(0, 36, buffer);
+
+  snprintf(buffer, sizeof(buffer),
+           "Motor: %s", motorStatus.c_str());
+  oled.drawStr(0, 47, buffer);
+
+  snprintf(buffer, sizeof(buffer),
+           "F:%s R:%s",
+           fwdButton ? "ON" : "OFF",
+           revButton ? "ON" : "OFF");
+  oled.drawStr(0, 58, buffer);
+
+  snprintf(buffer, sizeof(buffer),
+           "FL:%s RL:%s",
+           fwdLimit ? "ON" : "OFF",
+           revLimit ? "ON" : "OFF");
+  oled.drawStr(75, 58, buffer);
+
   oled.sendBuffer();
 }
 
-void setup() {
-  Serial.begin(115200);
-  pinMode(R_EN, OUTPUT); pinMode(L_EN, OUTPUT);
-  digitalWrite(R_EN, LOW); digitalWrite(L_EN, LOW);
-  bool right = ledcAttach(RPWM, 20000, 10);
-  bool left = ledcAttach(LPWM, 20000, 10);
-  pwmReady = right && left;
-  if (right) ledcWrite(RPWM, 0);
-  if (left) ledcWrite(LPWM, 0);
-  if (!pwmReady) Serial.println("PWM initialization failed: motion disabled");
-  pinMode(FORWARD_LIMIT, INPUT_PULLUP); pinMode(BACKWARD_LIMIT, INPUT_PULLUP);
-  pinMode(UP_BUTTON, INPUT_PULLUP); pinMode(DOWN_BUTTON, INPUT_PULLUP);
-  upButton.raw = upButton.stable = digitalRead(UP_BUTTON);
-  downButton.raw = downButton.stable = digitalRead(DOWN_BUTTON);
-  pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT); pinMode(BUZZER, OUTPUT);
-  digitalWrite(TRIG, LOW); digitalWrite(BUZZER, LOW);
-  analogReadResolution(12); analogSetPinAttenuation(WATER, ADC_11db);
-  Wire.begin(21, 22); oled.setI2CAddress(0x3C << 1); oled.begin();
-  readings = xQueueCreate(1, sizeof(Reading)); commands = xQueueCreate(1, sizeof(Command));
-  if (!readings || !commands) { stopMotor(); while (true) delay(1000); }
-  WiFi.mode(WIFI_STA); WiFi.setAutoReconnect(true); WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  if (xTaskCreate(networkTask, "server-http", 8192, nullptr, 1, nullptr) != pdPASS) {
-    Serial.println("Network task failed: motion disabled");
+// =====================================
+// WEB DASHBOARD HTML
+// =====================================
+
+const char webpage[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Water Motor Dashboard</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 18px;
+  font-family: Arial, sans-serif;
+  background: #101827;
+  color: white;
+}
+
+.container {
+  max-width: 650px;
+  margin: auto;
+}
+
+h2 {
+  text-align: center;
+  color: #38bdf8;
+}
+
+.subtitle {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.card {
+  background: #1e293b;
+  padding: 20px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.card h4 {
+  color: #94a3b8;
+  margin: 0 0 12px;
+}
+
+.value {
+  font-size: 23px;
+  font-weight: bold;
+  color: #38bdf8;
+}
+
+.status {
+  margin-top: 20px;
+  background: #1e293b;
+  padding: 18px;
+  border-radius: 12px;
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 20px;
+}
+
+button {
+  border: none;
+  padding: 16px 8px;
+  border-radius: 9px;
+  font-size: 15px;
+  font-weight: bold;
+  color: white;
+  cursor: pointer;
+}
+
+.forward {
+  background: #16a34a;
+}
+
+.reverse {
+  background: #2563eb;
+}
+
+.auto {
+  background: #0891b2;
+}
+
+.stop {
+  background: #dc2626;
+  grid-column: span 2;
+}
+
+button:active {
+  opacity: 0.7;
+}
+
+.indicator {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid #334155;
+}
+
+.lift-scene { height: 150px; display: grid; place-items: center; overflow: hidden; border-bottom: 4px solid #38bdf8; margin-top: 24px; }
+.house { font-size: 64px; }
+.house.lifting { animation: rise 1.6s ease-in-out infinite; }
+.house.lowering { animation: rise 1.6s ease-in-out infinite reverse; }
+@keyframes rise { from { transform: translateY(20px); } to { transform: translateY(-25px); } }
+@media (prefers-reduced-motion: reduce) { .house.lifting, .house.lowering { animation: none; } }
+.footer {
+  text-align: center;
+  margin-top: 25px;
+  color: #64748b;
+  font-size: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>WATER MOTOR CONTROL</h2>
+<p class="subtitle">ESP32 Local Dashboard</p>
+
+<div class="lift-scene" role="img" aria-label="House lift stopped" id="liftScene"><div class="house" id="house">&#127968;</div></div>
+
+<div class="grid">
+
+<div class="card">
+<h4>Water Sensor</h4>
+<div class="value" id="water">0</div>
+</div>
+
+<div class="card">
+<h4>Water Status</h4>
+<div class="value" id="waterStatus">DRY</div>
+</div>
+
+<div class="card">
+<h4>Motor Direction</h4>
+<div class="value" id="motor">STOP</div>
+</div>
+
+<div class="card">
+<h4>Control Mode</h4>
+<div class="value" id="mode">AUTO</div>
+</div>
+
+</div>
+
+<div class="status">
+
+<h3>System Status</h3>
+
+<div class="indicator">
+<span>Forward Button</span>
+<strong id="fb">OFF</strong>
+</div>
+
+<div class="indicator">
+<span>Reverse Button</span>
+<strong id="rb">OFF</strong>
+</div>
+
+<div class="indicator">
+<span>Forward Limit</span>
+<strong id="fl">OFF</strong>
+</div>
+
+<div class="indicator">
+<span>Reverse Limit</span>
+<strong id="rl">OFF</strong>
+</div>
+
+</div>
+
+<h3>Motor Controls</h3>
+
+<div class="buttons">
+
+<button class="forward"
+onclick="sendCommand('forward')">
+FORWARD
+</button>
+
+<button class="reverse"
+onclick="sendCommand('reverse')">
+REVERSE
+</button>
+
+<button class="auto"
+onclick="sendCommand('auto')">
+AUTOMATIC MODE
+</button>
+
+<button class="stop"
+onclick="sendCommand('stop')">
+EMERGENCY STOP
+</button>
+
+</div>
+
+<div class="footer">
+ESP32 Hosted Server | Local Network
+</div>
+
+</div>
+
+<script>
+
+async function refreshData() {
+
+  try {
+
+    const response = await fetch('/data');
+    const d = await response.json();
+
+    document.getElementById('water').innerText =
+      d.water;
+
+    document.getElementById('waterStatus').innerText =
+      d.waterStatus;
+
+    document.getElementById('motor').innerText =
+      d.motor;
+
+    const house = document.getElementById('house');
+    house.classList.toggle('lifting', d.motor === 'FORWARD');
+    house.classList.toggle('lowering', d.motor === 'REVERSE');
+    document.getElementById('liftScene').setAttribute('aria-label', d.motor === 'FORWARD' ? 'House is lifting' : d.motor === 'REVERSE' ? 'House is lowering' : 'House lift stopped');
+
+    document.getElementById('mode').innerText =
+      d.mode;
+
+    document.getElementById('fb').innerText =
+      d.fwdButton ? 'PRESSED' : 'OFF';
+
+    document.getElementById('rb').innerText =
+      d.revButton ? 'PRESSED' : 'OFF';
+
+    document.getElementById('fl').innerText =
+      d.fwdLimit ? 'PRESSED' : 'OFF';
+
+    document.getElementById('rl').innerText =
+      d.revLimit ? 'PRESSED' : 'OFF';
+
+  } catch(e) {
+    document.getElementById('house').classList.remove('lifting', 'lowering');
+    document.getElementById('liftScene').setAttribute('aria-label', 'Device connection lost');
+    console.log('Connection lost');
   }
 }
 
+async function sendCommand(command) {
+
+  try {
+    await fetch('/cmd?set=' + command);
+    refreshData();
+  } catch(e) {
+    alert('ESP32 connection failed');
+  }
+}
+
+setInterval(refreshData, 500);
+
+refreshData();
+
+</script>
+
+</body>
+</html>
+)rawliteral";
+
+// =====================================
+// WEB SERVER ROUTES
+// =====================================
+
+void handleRoot() {
+
+  server.send_P(
+    200,
+    "text/html",
+    webpage
+  );
+
+}
+
+void handleData() {
+
+  String mode = "AUTO";
+
+  if (webCommand == 1) mode = "MANUAL";
+  if (webCommand == -1) mode = "MANUAL";
+  if (webCommand == 2) mode = "STOP";
+
+  String json = "{";
+
+  json += "\"water\":" + String(waterValue) + ",";
+  json += "\"waterStatus\":\"";
+  json += waterDetected ? "WET" : "DRY";
+  json += "\",";
+
+  json += "\"motor\":\"" + motorStatus + "\",";
+  json += "\"mode\":\"" + mode + "\",";
+
+  json += "\"fwdButton\":";
+  json += fwdButton ? "true" : "false";
+  json += ",";
+
+  json += "\"revButton\":";
+  json += revButton ? "true" : "false";
+  json += ",";
+
+  json += "\"fwdLimit\":";
+  json += fwdLimit ? "true" : "false";
+  json += ",";
+
+  json += "\"revLimit\":";
+  json += revLimit ? "true" : "false";
+
+  json += "}";
+
+  server.send(200, "application/json", json);
+
+}
+
+void handleCommand() {
+
+  if (!server.hasArg("set")) {
+    server.send(400, "text/plain", "Missing command");
+    return;
+  }
+
+  String command = server.arg("set");
+
+  if (command == "forward") {
+    webCommand = 1;
+  }
+
+  else if (command == "reverse") {
+    webCommand = -1;
+  }
+
+  else if (command == "auto") {
+    webCommand = 0;
+  }
+
+  else if (command == "stop") {
+    webCommand = 2;
+  }
+
+  else {
+    server.send(400, "text/plain", "Invalid command");
+    return;
+  }
+
+  server.send(200, "text/plain", "Command received");
+
+}
+
+// =====================================
+// SETUP
+// =====================================
+
+void setup() {
+
+  Serial.begin(115200);
+
+  // I2C
+  Wire.begin(SDA_PIN, SCL_PIN);
+
+  // OLED
+  oled.begin();
+
+  // Sensor
+  pinMode(WATER, INPUT);
+
+  // BTS7960
+  pinMode(RPWM, OUTPUT);
+  pinMode(LPWM, OUTPUT);
+  pinMode(REN, OUTPUT);
+  pinMode(LEN, OUTPUT);
+
+  // Buttons
+  pinMode(FWD_BUTTON, INPUT_PULLUP);
+  pinMode(REV_BUTTON, INPUT_PULLUP);
+
+  // Limit switches
+  pinMode(FWD_LIMIT, INPUT_PULLUP);
+  pinMode(REV_LIMIT, INPUT_PULLUP);
+
+  digitalWrite(REN, HIGH);
+  digitalWrite(LEN, HIGH);
+
+  stopMotor();
+
+  // WiFi Access Point
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  WiFi.softAP(ssid, password);
+
+  Serial.println();
+  Serial.println("WIFI STARTED");
+
+  Serial.print("WiFi Name: ");
+  Serial.println(ssid);
+
+  Serial.print("Dashboard IP: ");
+  Serial.println(WiFi.softAPIP());
+
+  // Web Server
+  server.on("/", handleRoot);
+  server.on("/data", handleData);
+  server.on("/cmd", handleCommand);
+
+  server.begin();
+
+  pinMode(18, OUTPUT);
+  pinMode(19, INPUT);
+  digitalWrite(18, LOW);
+  telemetryQueue = xQueueCreate(1, sizeof(TelemetryReading));
+  if (telemetryQueue && xTaskCreatePinnedToCore(telemetryTask, "telemetry", 8192, nullptr, 1, nullptr, 0) != pdPASS)
+    Serial.println("Telemetry task unavailable; local control continues");
+
+  Serial.println("WEB SERVER STARTED");
+
+}
+
+// =====================================
+// MAIN LOOP
+// =====================================
+
 void loop() {
-  updateDirectionButtons();
-  updateControl();
-  updateSensors();
-  updateControl();
-  Reading reading = {waterLevel, distanceCm, currentDirection,
-                     digitalRead(FORWARD_LIMIT) == LOW, digitalRead(BACKWARD_LIMIT) == LOW};
-  xQueueOverwrite(readings, &reading);
-  updateDisplayAndBuzzer();
-  delay(1);
+
+  // Handle web requests
+  server.handleClient();
+
+  // Read sensors
+  waterValue = analogRead(WATER);
+
+  fwdButton = digitalRead(FWD_BUTTON) == LOW;
+  revButton = digitalRead(REV_BUTTON) == LOW;
+
+  fwdLimit = digitalRead(FWD_LIMIT) == LOW;
+  revLimit = digitalRead(REV_LIMIT) == LOW;
+
+  // Water detection
+  if (waterValue >= WET_THRESHOLD) {
+    waterDetected = true;
+  }
+  else if (waterValue <= DRY_THRESHOLD) {
+    waterDetected = false;
+  }
+
+  // =================================
+  // MOTOR CONTROL PRIORITY
+  // =================================
+
+  // Emergency stop
+  if (webCommand == 2) {
+
+    stopMotor();
+
+  }
+
+  // Both limit switches pressed
+  else if (fwdLimit && revLimit) {
+
+    stopMotor();
+
+  }
+
+  // Both physical buttons pressed
+  else if (fwdButton && revButton) {
+
+    stopMotor();
+
+  }
+
+  // Physical forward button
+  else if (fwdButton) {
+
+    if (!fwdLimit) {
+      forward();
+    }
+    else {
+      stopMotor();
+    }
+
+  }
+
+  // Physical reverse button
+  else if (revButton) {
+
+    if (!revLimit) {
+      reverse();
+    }
+    else {
+      stopMotor();
+    }
+
+  }
+
+  // Web forward
+  else if (webCommand == 1) {
+
+    if (!fwdLimit) {
+      forward();
+    }
+    else {
+      stopMotor();
+    }
+
+  }
+
+  // Web reverse
+  else if (webCommand == -1) {
+
+    if (!revLimit) {
+      reverse();
+    }
+    else {
+      stopMotor();
+    }
+
+  }
+
+  // Automatic water control
+  else {
+
+    if (waterDetected) {
+
+      if (!fwdLimit) {
+        forward();
+      }
+      else {
+        stopMotor();
+      }
+
+    }
+
+    else {
+
+      if (!revLimit) {
+        reverse();
+      }
+      else {
+        stopMotor();
+      }
+
+    }
+
+  }
+
+  // Ultrasonic distance is monitoring only, matching the supplied control logic.
+  digitalWrite(18, LOW); delayMicroseconds(2);
+  digitalWrite(18, HIGH); delayMicroseconds(10); digitalWrite(18, LOW);
+  unsigned long duration = pulseIn(19, HIGH, 25000);
+  float cm = duration * 0.0343f / 2;
+  TelemetryReading reading = {waterValue, motorStatus == "FORWARD" ? 1 : motorStatus == "REVERSE" ? -1 : 0,
+    duration && cm >= 2 && cm <= 400 ? cm : -1.f, fwdLimit, revLimit};
+  if (telemetryQueue) xQueueOverwrite(telemetryQueue, &reading);
+
+  // Update OLED
+  updateOLED();
+
+  // Serial Monitor
+  Serial.print("Water: ");
+  Serial.print(waterValue);
+
+  Serial.print(" | Status: ");
+  Serial.print(waterDetected ? "WET" : "DRY");
+
+  Serial.print(" | Motor: ");
+  Serial.println(motorStatus);
+
+  delay(100);
+
 }

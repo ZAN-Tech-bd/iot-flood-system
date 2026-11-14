@@ -65,6 +65,7 @@
             <div class="metric-label">Water level <span>≋</span></div>
             <div class="value" id="water">— <small>%</small></div>
             <p id="waterHint">Waiting for water sensor</p>
+            <p id="waterRaw">Raw ADC: unavailable</p>
             <div class="meter"><i id="waterBar"></i></div>
           </article>
           <article class="card metric">
@@ -73,33 +74,6 @@
             <p>Distance from house to ground</p>
           </article>
         </div>
-        <article class="card lift-controls">
-          <div>
-            <p class="eyebrow">MANUAL LIFT CONTROL</p>
-            <h2>Move your house</h2>
-            <p class="fine" id="modeLabel">Automatic operation</p>
-            <p class="fine" id="liftCommandState" role="status" aria-live="polite">
-              No dashboard override
-            </p>
-          </div>
-          <div class="lift-buttons" role="group" aria-label="Manual lift controls">
-            <button type="button" class="primary" id="liftUp" disabled>↑ Up</button
-            ><button type="button" class="secondary" id="liftDown" disabled>↓ Down</button
-            ><button type="button" class="stop-button" id="liftStop" disabled>■ Stop</button>
-          </div>
-          <p class="fine lift-controls-note">
-            Click Up or Down to start; click it again or press Stop to halt. Travel limits stop
-            movement. Commands take effect on the controller’s next poll.
-          </p>
-          <p
-            class="fine lift-controls-note"
-            id="liftControlMessage"
-            role="status"
-            aria-live="polite"
-          >
-            Fresh controller data is required for movement. Actual motion is reported below.
-          </p>
-        </article>
         <div class="lift-status" id="liftStatusPanel" role="status" aria-live="polite">
           <span class="lift-status-icon" aria-hidden="true">↥</span>
           <div>
@@ -228,6 +202,14 @@
           <p id="historyStatus" role="status" aria-live="polite">
             Select a date range to view saved readings.
           </p>
+          <div class="history-chart-heading">
+            <h2>Reading trends</h2>
+            <p class="fine">
+              Graphs show this page of readings, oldest to newest. Hover or tap a point for its
+              value and time.
+            </p>
+          </div>
+          <div id="historyCharts" class="history-charts"></div>
           <div
             class="history-table-wrap"
             tabindex="0"

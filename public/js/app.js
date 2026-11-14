@@ -1,4 +1,3 @@
-import { initLiftControls } from './features/lift-controls.js';
 import { initHistory } from './features/history.js';
 import { initNavigation } from './features/navigation.js';
 import { initLocationPicker } from './features/location-picker.js';
@@ -15,5 +14,3 @@ initWeather(socket);
 initAnalysis(socket);
 
 initHistory();
-
-initLiftControls(socket);

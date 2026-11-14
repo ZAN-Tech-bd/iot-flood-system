@@ -8,7 +8,7 @@ Base URL: http://localhost:3000. This prototype expects a trusted local network 
 | ------ | --------------------------------- | ------------------------------------------------------------------------------------------ |
 | GET    | /api/cities?country=BD            | All directory entries with coordinates for a two-letter country code; cached for 24 hours. |
 | GET    | /api/locations?q=Dhaka&country=BD | Open-Meteo city-name search; query must contain 2–100 characters.                          |
-| POST   | /api/esp                          | Validate telemetry, broadcast dashboardUpdate, and return controller settings.             |
+| POST   | /api/esp                          | Validate telemetry, broadcast dashboardUpdate, and acknowledge the upload.                 |
 
 City results include city, region, country, countryCode, lat, and lon; online results also include the provider id. Directory coverage is not a guarantee of every settlement.
 
@@ -20,7 +20,7 @@ City results include city, region, country, countryCode, lat, and lon; online re
 
 level is a finite number from 0–100. motorActive must be a boolean. distanceCm is optional or null and otherwise a finite number from 0–1000. Missing distance means unavailable elevation, not zero elevation.
 
-The response contains mode, manualState, startLevel, stopLevel, maxHeightCm, and baselineCm. Invalid telemetry or JSON returns status 400. Oversized JSON returns 413. City-provider failure returns 502. Error responses have an error string.
+The response contains ok, controlMode=local, liftCommand and commandId (both null until a dashboard request). It does not supply the sensor thresholds or local safety configuration. Invalid telemetry or JSON returns 400, oversized JSON returns 413, and logging failure returns 503. Firmware treats HTTP as optional telemetry upload and continues local control on errors.
 
 ## Socket.IO events
 
@@ -48,16 +48,10 @@ Each row has id, recordedAt, sensors, location, baselineCm, weather, weatherAgeS
 
 Logs require Node.js 22.13.0+ for embedded SQLite. Stop the server before copying the complete data folder for backup; keep SQLite companion files with the database. API keys are never included in log rows.
 
-## Manual lift commands
+## Local motor control with optional dashboard commands
 
-Browser → server: liftCommand with { action: 'up' | 'down' | 'stop' }, acknowledged with { ok: true, command } or { error }. Server → all dashboards: liftCommandUpdate with action, requestedAt and expiresAt. A new connection receives the current command; action=null means no dashboard override. Up/Down require fresh telemetry and have no duration limit. Sending the active direction again toggles Stop. Stop is allowed with stale telemetry. Stop is required before reversing direction. Movement commands override saved mode; Stop clears on a wet/dry sensor transition, and server restart clears all overrides. Commands are never persisted.
+All movement logic runs on the ESP32 and its physical buttons. The server can return optional manual commands; automatic motion remains local. Socket.IO liftCommand accepts up/down/stop and acknowledges with { ok: true, command: { action, id } }. Up/Down require fresh telemetry; Stop is always accepted. liftCommandUpdate broadcasts the request.
 
-POST /api/esp responses include liftCommand (auto/up/down/stop), commandExpiresAt (null), and commandRemainingMs (null). During a dashboard override mode=manual. The legacy manualState boolean is true only for Up. Firmware uses liftCommand, implements reversal interlocks and travel limits, and stops on loss of communication.
+POST /api/esp accepts optional waterRaw (integer 0-4095), upperLimit/lowerLimit (booleans), and motorDirection (up/down while motorActive=true, stopped when false). Missing optional readings are null. Raw water values are stored and broadcast unchanged: raw 1 remains 1 even if calibrated level is 0%. ESP32 chooses Up only when raw > 0 AND level > 0, otherwise Down, subject to local interlocks and button overrides.
 
-Telemetry optionally includes motorDirection: up/down when motorActive=true, stopped when motorActive=false, or null/omitted when unknown. Invalid or inconsistent directions return 400. Reported motor direction is independent of the requested command and is included in persisted sensor snapshots. Without direction telemetry, the UI displays a running motor without claiming upward or downward movement.
-
-### ESP32 command timing
-
-Responses also include commandId (the dashboard request timestamp, or null). commandExpiresAt and commandRemainingMs are always null: movement no longer expires by time. A Stop holds until the wet/dry water state changes, at which point the dashboard override clears and saved automatic mode resumes. The controller must still enforce travel limits and the communication watchdog. Responses are marked Cache-Control: no-store. See [firmware setup and behavior](hardware.md).
-
-Telemetry may include boolean `upperLimit` and `lowerLimit` fields (null/omitted means unknown). The ESP32 reports its active-low GPIO 16 and GPIO 4 switches. A reported limit cancels a matching manual command to Stop; firmware stops locally first. The dashboard displays “Upper limit reached · lifting stopped” or “Lower limit reached · lifting stopped” after stopped feedback, disables movement toward that switch, and allows movement away from it. Reflash the ESP32 to enable limit reporting.
+Responses use Cache-Control: no-store. New dashboard command IDs apply once; repeated polls do not restart a locally cancelled command. Local height calibration is compiled into firmware config.h. Server baselineCm affects displayed and logged elevation only; legacy threshold/mode fields remain accepted for compatibility but cannot control the ESP32. See [hardware behavior and offline checks](hardware.md).

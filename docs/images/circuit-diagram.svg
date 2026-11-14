@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1280" viewBox="0 0 1800 1280"><defs><style>text{font-family:Segoe UI,Arial,sans-serif;fill:#17343d}.title{font-size:36px;font-weight:700}.sub{font-size:18px;fill:#526e76}.head{font-size:23px;font-weight:700}.label{font-size:19px}.small{font-size:16px}.pin{font-size:19px;font-weight:600}.wire{fill:none;stroke:#087d72;stroke-width:3}.box{fill:white;stroke:#b9cdd2;stroke-width:2}.ground{stroke:#667b86;stroke-width:3;fill:none}</style></defs><rect width="1800" height="1280" fill="#f5f8fa"/><text x="60" y="70" class="title">FLOOD Lifting House — Circuit &amp; connections</text><text x="60" y="105" class="sub">ESP32-WROOM-32 · BTS7960 syringe lift · current firmware wiring · GPIO numbers, not physical pin positions</text>
+<rect x="710" y="190" width="390" height="780" rx="14" class="box"/>
+<text x="732" y="226" class="head">ESP32-WROOM-32</text>
+<text x="735" y="262" class="sub">3.3 V GPIO logic</text>
+<rect x="60" y="190" width="440" height="160" rx="14" class="box"/>
+<text x="82" y="226" class="head">SH1106 OLED · I²C</text>
+<text x="82" y="265" class="label">SDA</text>
+<text x="82" y="305" class="label">SCL</text>
+<text x="82" y="333" class="small">VCC → 3V3 · GND → common GND</text>
+<polyline points="500,260 710,260" class="wire"/>
+<text x="545" y="246" class="pin">GPIO21</text>
+<polyline points="500,302 710,302" class="wire"/>
+<text x="545" y="289" class="pin">GPIO22</text>
+<rect x="60" y="400" width="440" height="150" rx="14" class="box"/>
+<text x="82" y="436" class="head">Water-level sensor</text>
+<text x="82" y="473" class="label">AO (0–3.3 V)</text>
+<text x="82" y="521" class="small">VCC → 3V3 · GND → common GND</text>
+<polyline points="500,478 710,478" class="wire"/>
+<text x="545" y="465" class="pin">GPIO34</text>
+<rect x="60" y="600" width="440" height="290" rx="14" class="box"/>
+<text x="82" y="636" class="head">HC-SR04 ultrasonic</text>
+<text x="82" y="675" class="label">TRIG</text>
+<text x="82" y="730" class="label">ECHO (5 V)</text>
+<text x="82" y="860" class="small">VCC → 5 V · GND → common GND</text>
+<polyline points="500,675 710,675" class="wire"/>
+<text x="545" y="660" class="pin">GPIO18</text>
+<polyline points="300,730 360,730" class="wire"/>
+<rect x="360" y="719" width="68" height="22" fill="#fff5d9" stroke="#b0852a" stroke-width="2"/>
+<text x="364" y="708" class="small">1 kΩ</text>
+<polyline points="428,730 710,730" class="wire"/>
+<circle cx="540" cy="730" r="5" fill="#087d72"/>
+<text x="575" y="717" class="pin">GPIO19</text>
+<polyline points="540,730 540,770" class="wire"/>
+<rect x="529" y="770" width="22" height="55" fill="#fff5d9" stroke="#b0852a" stroke-width="2"/>
+<text x="566" y="802" class="small">2 kΩ</text>
+<polyline points="540,825 540,840" class="wire"/>
+<path d="M540 840v12m-16 0h32m-24 7h16m-12 7h8" class="ground"/>
+<text x="568" y="845" class="small">GND</text>
+<rect x="1250" y="190" width="490" height="380" rx="14" class="box"/>
+<text x="1272" y="226" class="head">BTS7960 motor driver</text>
+<polyline points="1100,270 1250,270" class="wire"/>
+<text x="1114" y="258" class="pin">GPIO25</text>
+<text x="1272" y="276" class="label">RPWM</text>
+<polyline points="1100,315 1250,315" class="wire"/>
+<text x="1114" y="303" class="pin">GPIO26</text>
+<text x="1272" y="321" class="label">LPWM</text>
+<polyline points="1100,360 1250,360" class="wire"/>
+<text x="1114" y="348" class="pin">GPIO27</text>
+<text x="1272" y="366" class="label">R_EN</text>
+<polyline points="1100,405 1250,405" class="wire"/>
+<text x="1114" y="393" class="pin">GPIO14</text>
+<text x="1272" y="411" class="label">L_EN</text>
+<text x="1272" y="450" class="small">VCC → regulated 5 V · GND → common GND</text>
+<text x="1272" y="487" class="label">B+ / B− → motor-rated DC supply</text>
+<text x="1272" y="528" class="label">M+ / M− → syringe actuator motor</text>
+<rect x="1250" y="610" width="490" height="150" rx="14" class="box"/>
+<text x="1272" y="646" class="head">Physical Up / Down pushbuttons</text>
+<polyline points="1100,670 1370,670" class="wire"/>
+<text x="1114" y="656" class="pin">GPIO15</text>
+<text x="1272" y="696" class="small">UP</text>
+<path d="M1370 670h22m0 0l42 -15m0 15h22" class="ground"/>
+<polyline points="1456,670 1480,670" class="wire"/>
+<path d="M1480 670v12m-16 0h32m-24 7h16m-12 7h8" class="ground"/>
+<polyline points="1100,720 1580,720" class="wire"/>
+<text x="1114" y="706" class="pin">GPIO33</text>
+<text x="1500" y="700" class="small">DOWN</text>
+<path d="M1580 720h22m0 0l42 -15m0 15h22" class="ground"/>
+<polyline points="1666,720 1690,720" class="wire"/>
+<path d="M1690 720v12m-16 0h32m-24 7h16m-12 7h8" class="ground"/>
+<rect x="1250" y="800" width="490" height="160" rx="14" class="box"/>
+<text x="1272" y="836" class="head">Travel-limit switches · normally open</text>
+<polyline points="1100,862 1435,862" class="wire"/>
+<text x="1114" y="847" class="pin">GPIO16</text>
+<text x="1272" y="888" class="small">UPPER</text>
+<path d="M1435 862h22m0 0l42 -15m0 15h22" class="ground"/>
+<polyline points="1521,862 1540,862" class="wire"/>
+<path d="M1540 862v12m-16 0h32m-24 7h16m-12 7h8" class="ground"/>
+<polyline points="1100,917 1580,917" class="wire"/>
+<text x="1114" y="902" class="pin">GPIO4</text>
+<text x="1475" y="900" class="small">LOWER</text>
+<path d="M1580 917h22m0 0l42 -15m0 15h22" class="ground"/>
+<polyline points="1666,917 1690,917" class="wire"/>
+<path d="M1690 917v12m-16 0h32m-24 7h16m-12 7h8" class="ground"/>
+<text x="735" y="850" class="pin">GPIO23 → buzzer driver IN</text>
+<text x="735" y="882" class="label">Active-HIGH buzzer</text>
+<text x="735" y="916" class="small">Driver GND → common GND</text>
+<rect x="60" y="1000" width="1680" height="210" rx="14" class="box"/>
+<text x="82" y="1036" class="head">Power, networking &amp; operating notes</text>
+<text x="82" y="1070" class="label">POWER: ESP32 via USB / regulated board supply. Motor supply is separate; connect all grounds together.</text>
+<text x="82" y="1105" class="label">BUTTONS: INPUT_PULLUP · pressed = LOW. Release GPIO15 button during boot (strapping pin). GPIO20 is unavailable.</text>
+<text x="82" y="1140" class="label">NETWORK: ESP32 ⇄ 2.4 GHz Wi-Fi router ⇄ Node.js server /api/esp ⇄ browser dashboard</text>
+<text x="82" y="1175" class="label">CONTROL: water &gt; 0% → Up · water = 0% → Down · press active direction again to Stop · travel limits always apply.</text>
+<text x="60" y="1250" class="small">Connection diagram, not a PCB layout. Never connect 5 V ECHO directly to GPIO19. Use a suitable buzzer driver for loads above GPIO ratings.</text>
+</svg>
