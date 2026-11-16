@@ -45,17 +45,4 @@ The history service uses Node built-in SQLite (Node 22.13.0+), WAL journaling, p
 
 ## Offline lift control
 
-The ESP32 makes motor decisions locally from raw water ADC and GPIO15/GPIO33 buttons. Raw > 0 AND calibrated level > 0 requests Up; either zero requests Down. Limits, height checks and reversal interlocks run on the device. HTTP runs in a separate task; optional dashboard requests enter the local loop through a queue. Losing Wi-Fi, upload acknowledgement or the server does not interrupt local operation. Dashboard Up/Down/Stop remains available online; physical buttons and sensor logic work offline.
-
-## Firmware task priorities
-
-| Work                                       | Core         | Priority | Scheduling target                       |
-| ------------------------------------------ | ------------ | -------- | --------------------------------------- |
-| Local water, buttons, limits, motor        | 1            | 3        | Control every 5 ms; water every 50 ms   |
-| Ultrasonic measurement                     | 0            | 2        | Every 100 ms plus measurement time      |
-| Optional Wi-Fi / HTTP / dashboard commands | 0            | 1        | About once per second plus request time |
-| OLED, buzzer, serial diagnostics           | Arduino loop | 1        | Low-priority display work               |
-
-Local control starts before Wi-Fi and OLED initialization. Motor control never calls HTTP, Wi-Fi, I2C, serial output, or pulseIn. Tasks exchange copied snapshots through single-item queues with zero wait time. Ultrasonic pulseIn runs separately (25 ms maximum pulse wait); a missing or more-than-500-ms-old distance inhibits motion locally. Serial diagnostics run once per second outside the motor task. Queue/task failures in optional networking do not disable sensor control. Timing values are scheduling targets, not measured worst-case guarantees; verify on the physical ESP32.
-
-Task APIs: [Espressif FreeRTOS](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/freertos_additions.html).
+The ESP32 controls the motor locally using water-sensor hysteresis, physical buttons, and travel limits. Its local web interface provides manual direction, AUTO, and STOP. Ultrasonic distance is used for monitoring and does not inhibit movement. A separate telemetry task sends snapshots to the server; network failure does not interrupt local control. See the [hardware guide](hardware.md) for the current behavior and wiring.

@@ -1,10 +1,68 @@
-﻿# FLOOD Lifting House
+# Flood Lifting House
 
-DPI MODEL — FLOOD-PROOF HYDRAULIC FARM & PROJECT SYSTEM A Smart Dynamic-Elevation Business & Farm Solution for Flood-Prone Regions
+**A flood-responsive house prototype for a more sustainable city.** Built by **Tahasin Al Mahabi and Fiham** for the **World Robot Games 2026 in Japan**, Sustainable City section.
 
-![DPI project team logo](public/assets/images/team-logo.png)
+![The completed Flood Lifting House model](docs/Media/build/IMG20261112194640.jpg)
 
-An offline ESP32 controller and monitoring dashboard for a house mounted on a vertical lift. It shows water level, ultrasonic distance, calculated house height, motor status, weather, Gemini feedback, and persistent sensor/weather history.
+Flooding can make homes and farms vulnerable to rising water. This project demonstrates a possible response: a model house mounted on a motor-driven lifting mechanism. An ESP32 reads a water sensor and controls the lift locally; a computer dashboard displays sensor readings, movement, weather, and history. It is a prototype for learning and demonstration, not a certified flood-protection system.
+
+[Full project report (PDF)](docs/DPI_Model_Complete_Report_Business.pdf) ? [3D-printable STL files](docs/models/) ? [Build photos](docs/Media/build/) ? [Team photos](docs/Media/team/) ? [Project video](docs/Media/demo/VID20261114015252.mp4) ? [Hardware guide](docs/hardware.md)
+
+## How it works
+
+1. A water sensor provides a reading to the ESP32. In automatic mode, the controller uses wet and dry thresholds to decide whether to raise or lower the house.
+2. The ESP32 drives a motor through a BTS7960 motor driver. The motor operates the mechanical lift; upper and lower limit switches stop travel in the corresponding direction.
+3. Physical buttons and the ESP32's local web page provide manual controls. The controller can operate locally even when the main dashboard or network is unavailable.
+4. An ultrasonic sensor measures distance to a fixed ground reference for the dashboard's height estimate. It is for monitoring and does not stop the motor.
+5. When connected to the local network, the ESP32 sends readings to the Node.js server. The browser dashboard displays the readings and stores history; internet access adds weather and optional Gemini feedback.
+
+`Water sensor ? ESP32 ? motor driver ? lift ? house`  
+`ESP32 ? local network ? server and database ? dashboard`
+
+## Project team
+
+Tahasin Al Mahabi and Fiham built the project for the World Robot Games 2026 in Japan, in the Sustainable City section.
+
+![Project team at the event](docs/Media/team/WhatsApp%20Image%202026-11-16%20at%202.25.17%20AM.jpeg)
+
+[Another team photo](docs/Media/team/WhatsApp%20Image%202026-11-16%20at%202.25.18%20AM.jpeg)
+
+## Build process
+
+The photographs document the prototype's construction. The report and STL files provide further project material; the repository does not specify exact print quantities, dimensions, materials, or a complete mechanical bill of materials, so check the models and adapt the assembly to your own components.
+
+| Stage                       | What to do                                                                                                                                     | Project photos                                                                                                                                                                                                                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan and prepare            | Review the report, sketch the layout, and prepare a stable base and house model.                                                               | [Design sketch](docs/Media/build/IMG20261114035815.jpg), [house model](docs/Media/build/IMG20261112194640.jpg)                                                                                                                                                                            |
+| Print and assemble the lift | Inspect the STL files in a slicer, choose suitable print settings, and assemble and check the moving scissor parts.                            | [Scissor assembly 1](docs/Media/build/IMG20261114003246.jpg), [assembly 2](docs/Media/build/IMG20261114003248.jpg), [assembly 3](docs/Media/build/IMG20261114003258.jpg)                                                                                                                  |
+| Install the drive           | Fit the motor and printed pushing mechanism to the base; check that the mechanism moves freely.                                                | [Motor assembly 1](docs/Media/build/IMG20261114003418.jpg), [assembly 2](docs/Media/build/IMG20261114003431.jpg), [detail](docs/Media/build/IMG20261114003442.jpg)                                                                                                                        |
+| Assemble the house          | Mount and align the house on the lifting structure and secure the assembly to its base.                                                        | [Preparation 1](docs/Media/build/IMG20261114003222.jpg), [preparation 2](docs/Media/build/IMG20261114003228.jpg), [mounting 1](docs/Media/build/IMG20261114003233.jpg), [mounting 2](docs/Media/build/IMG20261114003236.jpg)                                                              |
+| Wire and test               | Connect the ESP32, sensors, motor driver, buttons, and limit switches using the wiring guide. Check direction and limits before adding a load. | [Wiring](docs/Media/build/IMG20261114003451.jpg), [base and electronics](docs/Media/build/IMG20261114035822.jpg), [testing 1](docs/Media/build/IMG20261114015229.jpg), [testing 2](docs/Media/build/IMG20261114015233.jpg), [assembled prototype](docs/Media/build/IMG20261114015237.jpg) |
+
+[Watch the project video](docs/Media/demo/VID20261114015252.mp4) ? [Browse all build photos](docs/Media/build/)
+
+### Parts and tools
+
+The controller setup uses an ESP32-WROOM-32, water sensor, BTS7960 motor driver, DC motor and suitable motor power supply, two direction buttons, two travel limit switches, an SH1106 OLED, and an optional HC-SR04 ultrasonic sensor. You will also need wiring, a common ground, a 3.3 V-safe divider for the HC-SR04 ECHO signal, a computer, and a means to print and assemble the mechanical parts. See the [hardware guide](docs/hardware.md) for GPIO connections and control behavior.
+
+### 3D-printable parts
+
+All supplied STL files are in [docs/models](docs/models/). Open them in your slicer to inspect size, orientation, supports, and fit before printing. Multiple nut versions are included; select the version that fits your assembly.
+
+| Part                  | Files                                                                                                                                                                                                                                                                            |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base and structure    | [Base v3](docs/models/Base%20v3.stl), [Scissor Base](docs/models/Scissor%20Base.stl), [Blade](docs/models/Blade.stl)                                                                                                                                                             |
+| Connectors and guides | [Corner Connector](docs/models/Corner%20Connector.stl), [L connector](docs/models/L%20connector.stl), [Slider](docs/models/Slider.stl), [Slider Support](docs/models/Slider%20Support.stl), [T-Bottom](docs/models/T-Bottom.stl), [T-top](docs/models/T-top.stl)                 |
+| Drive and fasteners   | [Pusher Base](docs/models/Pusher%20Base.stl), [Pushing Mechanism V2](docs/models/Pushing%20Mechanism%20V2.stl), [Pully](docs/models/Pully.stl), [Bolt](docs/models/Bolt.stl), [Nut](docs/models/Nut.stl), [Nut v1](docs/models/Nut%20v1.stl), [Nut v2](docs/models/Nut%20v2.stl) |
+
+### Firmware and first physical test
+
+1. Wire the components using the [pin table and circuit diagram](docs/hardware.md#wiring). Provide an independent physical motor power cutoff and keep the lift unloaded for initial checks.
+2. Install the ESP32 board package, U8g2, and ArduinoJson 7 in Arduino IDE. Open [the firmware sketch](firmware/esp32_controller/esp32_controller.ino).
+3. Set your own 2.4 GHz Wi-Fi credentials and the computer's LAN address in [config.h](firmware/esp32_controller/config.h). Set your own access-point password and calibrate the water sensor and thresholds for your hardware. Do not publish real credentials.
+4. Select the board and port, upload the sketch, and open Serial Monitor at 115200 baud. Connect to the configured ESP32 access point and open the address shown in Serial Monitor.
+5. Verify motor direction, both limit switches, STOP, manual controls, and wet/dry behavior with no load. Adjust the mechanism and calibration before testing the complete model. The detailed [hardware guide](docs/hardware.md) explains control priority.
+6. Set up the computer dashboard below, then confirm telemetry arrives over the same local network.
 
 ## Circuit diagram and dashboard preview
 
