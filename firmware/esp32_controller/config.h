@@ -4,9 +4,10 @@
 // constexpr char WIFI_PASSWORD[] = "12345678";
 constexpr char WIFI_SSID[] = "zantech";
 constexpr char WIFI_PASSWORD[] = "88888888";
-constexpr char SERVER_URL[] = "http://192.168.0.103:3000/api/esp";
-constexpr int WATER_RAW_EMPTY = 100;
-constexpr int WATER_RAW_FULL = 1100;
+constexpr char SERVER_URL[] = "http://192.168.0.113:3000/api/esp";
+constexpr int WATER_RAW_EMPTY = 0;
+constexpr int WATER_RAW_FULL = 1000; // Assumed; replace with a measured full-scale value.
+constexpr float OLED_BASELINE_CM = 10.0f; // Keep aligned with the server baseline.
 static_assert(WATER_RAW_FULL > WATER_RAW_EMPTY, "Water calibration must increase");
 
 // Local access point and hysteresis from the working controller.

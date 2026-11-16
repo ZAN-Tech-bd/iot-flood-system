@@ -37,6 +37,7 @@ WebServer server(80);
 #define LPWM 26
 #define REN 27
 #define LEN 14
+#define BUZZER 17
 
 // Buttons
 #define FWD_BUTTON 32
@@ -85,6 +86,10 @@ struct TelemetryReading {
 };
 QueueHandle_t telemetryQueue = nullptr;
 
+float waterPercent(int raw) {
+  return constrain(100.f * (raw - WATER_RAW_EMPTY) / (WATER_RAW_FULL - WATER_RAW_EMPTY), 0.f, 100.f);
+}
+
 void telemetryTask(void *) {
   uint32_t retryAt = 0;
   for (;;) {
@@ -98,7 +103,7 @@ void telemetryTask(void *) {
       if (xQueuePeek(telemetryQueue, &reading, 0) == pdTRUE) {
         JsonDocument payload;
         payload["waterRaw"] = reading.raw;
-        payload["level"] = constrain(100.f * (reading.raw - WATER_RAW_EMPTY) / (WATER_RAW_FULL - WATER_RAW_EMPTY), 0.f, 100.f);
+        payload["level"] = waterPercent(reading.raw);
         payload["controlMode"] = "local";
         payload["motorActive"] = reading.direction != 0;
         payload["motorDirection"] = reading.direction > 0 ? "up" : reading.direction < 0 ? "down" : "stopped";
@@ -130,6 +135,7 @@ void telemetryTask(void *) {
 void stopMotor() {
   analogWrite(RPWM, 0);
   analogWrite(LPWM, 0);
+  digitalWrite(BUZZER, LOW);
   motorStatus = "STOP";
 }
 
@@ -145,44 +151,40 @@ void reverse() {
   motorStatus = "REVERSE";
 }
 
+void updateBuzzer() {
+  static bool wasMoving = false;
+  static uint32_t startedAt = 0;
+  const bool moving = motorStatus != "STOP";
+  if (moving && !wasMoving) startedAt = millis();
+  digitalWrite(BUZZER, moving && ((millis() - startedAt) % 1000 < 500) ? HIGH : LOW);
+  wasMoving = moving;
+}
+
 // =====================================
 // OLED DISPLAY
 // =====================================
 
-void updateOLED() {
+void updateOLED(float distance) {
 
   char buffer[30];
 
   oled.clearBuffer();
   oled.setFont(u8g2_font_6x10_tf);
 
-  oled.drawStr(0, 10, "WATER MOTOR CONTROL");
-  oled.drawHLine(0, 13, 128);
-
-  snprintf(buffer, sizeof(buffer),
-           "Water: %d", waterValue);
-  oled.drawStr(0, 25, buffer);
-
-  snprintf(buffer, sizeof(buffer),
-           "Status: %s",
-           waterDetected ? "WET" : "DRY");
-  oled.drawStr(0, 36, buffer);
-
-  snprintf(buffer, sizeof(buffer),
-           "Motor: %s", motorStatus.c_str());
-  oled.drawStr(0, 47, buffer);
-
-  snprintf(buffer, sizeof(buffer),
-           "F:%s R:%s",
-           fwdButton ? "ON" : "OFF",
-           revButton ? "ON" : "OFF");
-  oled.drawStr(0, 58, buffer);
-
-  snprintf(buffer, sizeof(buffer),
-           "FL:%s RL:%s",
-           fwdLimit ? "ON" : "OFF",
-           revLimit ? "ON" : "OFF");
-  oled.drawStr(75, 58, buffer);
+  snprintf(buffer, sizeof(buffer), "Water: %.1f%% %s", waterPercent(waterValue), waterDetected ? "WET" : "DRY");
+  oled.drawStr(0, 10, buffer);
+  snprintf(buffer, sizeof(buffer), "Raw ADC: %d", waterValue);
+  oled.drawStr(0, 20, buffer);
+  if (distance >= 0) snprintf(buffer, sizeof(buffer), "Distance: %.1f cm", distance);
+  else snprintf(buffer, sizeof(buffer), "Distance: --");
+  oled.drawStr(0, 30, buffer);
+  if (distance >= 0) snprintf(buffer, sizeof(buffer), "Height: %.1f cm", max(0.0f, distance - OLED_BASELINE_CM));
+  else snprintf(buffer, sizeof(buffer), "Height: --");
+  oled.drawStr(0, 40, buffer);
+  snprintf(buffer, sizeof(buffer), "Motor: %s", motorStatus.c_str());
+  oled.drawStr(0, 50, buffer);
+  snprintf(buffer, sizeof(buffer), "Limits: U:%d D:%d", fwdLimit, revLimit);
+  oled.drawStr(0, 60, buffer);
 
   oled.sendBuffer();
 }
@@ -585,6 +587,7 @@ void setup() {
   pinMode(LPWM, OUTPUT);
   pinMode(REN, OUTPUT);
   pinMode(LEN, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
 
   // Buttons
   pinMode(FWD_BUTTON, INPUT_PULLUP);
@@ -758,6 +761,8 @@ void loop() {
 
   }
 
+  updateBuzzer();
+
   // Ultrasonic distance is monitoring only, matching the supplied control logic.
   digitalWrite(18, LOW); delayMicroseconds(2);
   digitalWrite(18, HIGH); delayMicroseconds(10); digitalWrite(18, LOW);
@@ -768,7 +773,7 @@ void loop() {
   if (telemetryQueue) xQueueOverwrite(telemetryQueue, &reading);
 
   // Update OLED
-  updateOLED();
+  updateOLED(reading.distance);
 
   // Serial Monitor
   Serial.print("Water: ");
