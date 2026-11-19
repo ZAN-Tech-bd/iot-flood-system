@@ -23,9 +23,34 @@ Flooding can make homes and farms vulnerable to rising water. This project demon
 
 Tahasin Al Mahabi and Fiham built the project for the World Robot Games 2026 in Japan, in the Sustainable City section.
 
-![Project team at the event](docs/Media/team/WhatsApp%20Image%202026-11-16%20at%202.25.17%20AM.jpeg)
+![Project team at the event](docs/Media/team/team-event-1.jpg)
 
-[Another team photo](docs/Media/team/WhatsApp%20Image%202026-11-16%20at%202.25.18%20AM.jpeg)
+[Another team photo](docs/Media/team/team-event-2.jpg)
+
+## Proud moment — World Robot Games 2026
+
+Our ambassador **Fiham Ahmed** and the **Dynamic Project Innovators (DPI)** team represented Bangladesh at the International Round of the **World Robot Games (WRG) 2026** in Japan. Competing against participants from 22 countries, they secured **4th place worldwide** in two separate international categories and earned **two Copper Medals**.
+
+### The project: DPI Model — a Flood-Proof Hydraulic Farm & Project System
+
+Bangladesh is one of the most flood-prone countries in the world, and floods cause heavy losses to homes, crops, livestock, and small businesses every year. The team proposed an additional layer of flood resilience: when water levels rise, a hydraulic scissor-lift raises a lightweight structure above the flood level.
+
+**Key components:**
+
+- Water-level sensing
+- Automatic control
+- Mechanical safety locks
+- Solar backup
+
+It is designed to complement, not replace, embankments, drainage, and early warning systems, and it would go through full-scale engineering validation before real-world deployment.
+
+Congratulations to project lead **Tahasin Al Mahabi**, **Fiham Ahmed**, and every member of the DPI team. Taking a real local problem to an international stage and returning with results is a strong example of what young Bangladeshi innovators can do.
+
+At ZAN Tech, we believe that with the right opportunities and guidance, students can lead globally. This achievement is one more proof of that.
+
+Best wishes to the team for every step ahead.
+
+![DPI team award](docs/Media/team/team-award.jpg)
 
 ## Build process
 
